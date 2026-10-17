@@ -103,39 +103,47 @@ public class Station : MonoBehaviour
         Log($"взяв {chef.Hand}");
     }
 
+    void ShowCut(float progress, bool punch)
+    {
+        if (foodVisual != null) foodVisual.SetCutProgress(progress, punch);
+    }
+
     void HandleCutting(ChefInteraction chef)
     {
         if (_onTop == null)
         {
-            if (chef.Hand != null && chef.Hand.needsCutting)
-            {
-                _onTop = chef.Hand;
-                chef.Hand = null;
-                _cutPresses = 0;
-                Log($"поклав {_onTop} на дошку");
-            }
+            if (chef.Hand == null) { Log("дошка порожня, у руках нічого"); return; }
+            if (!chef.Hand.needsCutting) { Log($"{chef.Hand} не потребує нарізання"); return; }
+
+            _onTop = chef.Hand;
+            chef.Hand = null;
+            _cutPresses = 0;
+            ShowCut(0f, false);
+            Log($"поклав {_onTop} на дошку");
             return;
         }
 
-        if (chef.Hand != null) return;
+        if (chef.Hand != null) { Log("щоб різати, руки мають бути порожні"); return; }
 
         if (_onTop.needsCutting)
         {
             _cutPresses++;
+            ShowCut(_cutPresses / 3f, true);
             Log($"різання {_cutPresses}/3");
+
             if (_cutPresses >= 3)
             {
                 _onTop.needsCutting = false;
                 _onTop.state = FoodState.Cut;
                 Log($"{_onTop} нарізано");
             }
+            return;
         }
-        else
-        {
-            chef.Hand = _onTop;
-            _onTop = null;
-            Log($"взяв {chef.Hand} з дошки");
-        }
+
+        chef.Hand = _onTop;
+        _onTop = null;
+        ShowCut(0f, false);
+        Log($"взяв {chef.Hand} з дошки");
     }
 
     void HandleStove(ChefInteraction chef)
@@ -227,18 +235,21 @@ public class Station : MonoBehaviour
     {
         if (chef.Hand == null) { Log("руки порожні"); return; }
 
-        bool ready = chef.Hand is Dish d
-            ? d.state == FoodState.Ready
-            : chef.Hand.state == FoodState.Ready;
-
-        if (!ready)
+        if (!(chef.Hand is Dish dish))
         {
-            Log($"не можна видати {chef.Hand}");
+            Log($"{chef.Hand} без тарілки не можна видати");
             return;
         }
 
-        Log($"видав {chef.Hand}");
-        chef.Hand = null;
+        if (OrderManager.Instance == null)
+        {
+            Log("немає OrderManager у сцені");
+            return;
+        }
+
+        // Якщо страва підійшла до клієнта, OrderManager сам покаже результат у логах
+        if (OrderManager.Instance.TrySubmit(dish))
+            chef.Hand = null;
     }
 
     void HandleTrash(ChefInteraction chef)
