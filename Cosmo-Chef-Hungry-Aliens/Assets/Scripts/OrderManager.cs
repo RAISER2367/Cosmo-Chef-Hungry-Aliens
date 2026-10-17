@@ -16,9 +16,6 @@ public class OrderManager : MonoBehaviour
 {
     public static OrderManager Instance { get; private set; }
 
-    [Header("Зміна")]
-    [SerializeField] float shiftLength = 180f;      // 3 хв, як у GDD
-
     [Header("Клієнти")]
     [SerializeField] Alien alienPrefab;
     [SerializeField] Transform spawnPoint;          // де з'являються, поза трейлером
@@ -35,11 +32,11 @@ public class OrderManager : MonoBehaviour
     [SerializeField] Transform chef;
 
     readonly List<Order> _queue = new List<Order>();
-    readonly Queue<float> _timerMilestones = new Queue<float>(); // Черга для дебаг-таймера
+    readonly Queue<float> _timerMilestones = new Queue<float>(); // позначки для дебаг-таймера
 
     float _shiftLeft;
     float _spawnTimer;
-    bool _shiftOver;
+    bool _running;
 
     public int Served { get; private set; }
     public int Lost { get; private set; }
@@ -48,16 +45,32 @@ public class OrderManager : MonoBehaviour
     void Awake()
     {
         Instance = this;
-        _shiftLeft = shiftLength;
-        _spawnTimer = 0f; // перший клієнт одразу
+    }
 
-        // Автоматично формуємо відмітки для таймера (хвилини + фінальні секунди)
-        float t = shiftLength;
+    public void StartShift()
+    {
+        float duration = ShiftSettings.Duration;
+
+        _shiftLeft = duration;
+        _spawnTimer = 0f;          // перший клієнт одразу
+        _running = true;
+
+        BuildTimerMilestones(duration);
+    }
+
+    void BuildTimerMilestones(float duration)
+    {
+        _timerMilestones.Clear();
+
+        // Хвилинні позначки (як і раніше)
+        float t = duration;
         while (t > 30f)
         {
             t -= 60f;
             if (t > 30f) _timerMilestones.Enqueue(t);
         }
+
+        // Фінальні секунди
         _timerMilestones.Enqueue(30f);
         _timerMilestones.Enqueue(15f);
         _timerMilestones.Enqueue(10f);
@@ -67,14 +80,14 @@ public class OrderManager : MonoBehaviour
 
     void Update()
     {
-        if (_shiftOver) return;
+        if (!_running) return;
 
         _shiftLeft -= Time.deltaTime;
 
-        // Логіка дебаг-таймера
-        if (_timerMilestones.Count > 0 && _shiftLeft <= _timerMilestones.Peek())
+        // Дебаг-таймер: while, щоб не пропустити кілька позначок за один кадр
+        while (_timerMilestones.Count > 0 && _shiftLeft <= _timerMilestones.Peek())
         {
-            float mark = _timerMilestones.Dequeue(); // Беремо і видаляємо позначку
+            float mark = _timerMilestones.Dequeue();
             if (mark >= 60f)
                 Debug.Log($"[Таймер] Залишилося: {mark / 60f} хв");
             else
@@ -137,6 +150,8 @@ public class OrderManager : MonoBehaviour
 
     public bool TrySubmit(Dish dish)
     {
+        if (!_running) return false;
+
         for (int i = 0; i < _queue.Count; i++)
         {
             if (!Matches(_queue[i].required, dish)) continue;
@@ -181,9 +196,13 @@ public class OrderManager : MonoBehaviour
 
     void EndShift()
     {
-        _shiftOver = true;
+        _running = false;
+
         for (int i = _queue.Count - 1; i >= 0; i--) FailOrder(i);
 
         Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, астрономічних тугриків: {Credits}");
+
+        if (ShiftUI.Instance != null)
+            ShiftUI.Instance.ShowResult(Served, Lost, Credits);
     }
 }

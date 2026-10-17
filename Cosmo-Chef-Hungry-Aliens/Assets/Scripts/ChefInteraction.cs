@@ -33,6 +33,7 @@ public class ChefInteraction : MonoBehaviour
 
     void Update()
     {
+        if (Time.timeScale == 0f) return;
         UpdateHeldVisuals();
 
         _target = FindTargetStation();
