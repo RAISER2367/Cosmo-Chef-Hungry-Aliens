@@ -159,11 +159,12 @@ public class OrderManager : MonoBehaviour
             Order done = _queue[i];
             Served++;
             Credits += done.reward;
+            GameSession.AddCredits(done.reward);
             done.alien.Leave(exitPoint.position, true);
             _queue.RemoveAt(i);
             AssignQueueSpots();
 
-            Debug.Log($"[Orders] видано {dish} для {done}, +{done.reward}. Всього астрономічних тугриків: {Credits}");
+            Debug.Log($"[Orders] видано {dish} для {done}, +{done.reward}");
             return true;
         }
 
@@ -200,9 +201,12 @@ public class OrderManager : MonoBehaviour
 
         for (int i = _queue.Count - 1; i >= 0; i--) FailOrder(i);
 
-        Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, астрономічних тугриків: {Credits}");
+        foreach (Station s in FindObjectsByType<Station>())
+            s.ClearContents();
 
-        if (ShiftUI.Instance != null)
-            ShiftUI.Instance.ShowResult(Served, Lost, Credits);
+        Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, заробіто: {Credits}");
+
+        if (HubUI.Instance != null)
+            HubUI.Instance.ShowResult(Served, Lost, Credits);
     }
 }

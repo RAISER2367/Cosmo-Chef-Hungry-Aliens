@@ -28,7 +28,7 @@ public class FirstPersonChefController : MonoBehaviour
 
     private void Update()
     {
-        if (Time.timeScale == 0f) return;
+        if (!GameFlow.CanMove) return; // в ноутбуці й на результаті гравець стоїть
         HandleLook();
         HandleMovement();
     }

@@ -17,14 +17,23 @@ public class Station : MonoBehaviour
     [Header("Тільки для AssemblyTable")]
     public int plateCapacity = 3;
 
-    [Header("Візуал")]
-    public FoodVisual foodVisual;      // плита або дошка
-    public FoodVisual[] storageSlots;  // сховище
-    public FoodVisual[] plateSlots;    // тарілка
+    [Header("Візуал дошки")]
+    public FoodVisual foodVisual;
 
-    FoodItem _onTop;
+    [Header("Візуал сховища")]
+    public FoodVisual[] storageSlots;
+
+    [Header("Візуал тарілки")]
+    public FoodVisual[] plateSlots;
+
+    [Header("Плита: комфорки")]
+    public GameObject[] burnerPads;     // блюдця, вимикаються, доки комфорка не куплена
+    public FoodVisual[] burnerVisuals;  // FoodOnBurner на кожному блюдці
+
+    FoodItem _onTop;                    // дошка (CuttingTable)
     int _cutPresses;
     readonly List<FoodItem> _items = new List<FoodItem>();
+    readonly FoodItem[] _burners = new FoodItem[4];
     Dish _dish;
 
     void Start()
@@ -42,42 +51,79 @@ public class Station : MonoBehaviour
 
     void Update()
     {
-        if (type != StationType.Stove || _onTop == null) return;
+        if (type == StationType.Stove) TickBurners();
+    }
 
-        _onTop.cookTime += Time.deltaTime;
-        float t = _onTop.cookTime;
-
-        // Таймінги з GDD: 0–4 сек сирий, 5–8 готовий, 9+ згорілий
-        FoodState s = t < 5f ? FoodState.Raw : t < 9f ? FoodState.Ready : FoodState.Burnt;
-        if (s != _onTop.state)
+    void TickBurners()
+    {
+        int n = Mathf.Min(GameSession.BurnerCount, _burners.Length);
+        for (int i = 0; i < n; i++)
         {
-            _onTop.state = s;
-            Log($"{_onTop} at {t:F2}s");
+            FoodItem f = _burners[i];
+
+            // Нарізане не готується: таймер не має перезаписувати стан Cut
+            if (f == null || f.state == FoodState.Cut) continue;
+
+            f.cookTime += Time.deltaTime;
+            float t = f.cookTime;
+
+            // Таймінги з GDD: 0–4 сирий, 5–8 готовий, 9+ згорілий
+            FoodState s = t < 5f ? FoodState.Raw : t < 9f ? FoodState.Ready : FoodState.Burnt;
+            if (s != f.state)
+            {
+                f.state = s;
+                Log($"комфорка {i}: {f} at {t:F2}s");
+            }
         }
     }
 
     void LateUpdate()
     {
-        if (type == StationType.StorageTable && storageSlots != null)
+        switch (type)
         {
-            for (int i = 0; i < storageSlots.Length; i++)
-                storageSlots[i].Apply(i < _items.Count ? _items[i] : null);
-            return;
-        }
-
-        if (type == StationType.AssemblyTable && plateSlots != null && _dish != null)
-        {
-            for (int i = 0; i < plateSlots.Length; i++)
-                plateSlots[i].Apply(i < _dish.parts.Count ? _dish.parts[i] : null);
-            return;
+            case StationType.Stove: ShowBurners(); return;
+            case StationType.StorageTable: ShowStorage(); return;
+            case StationType.AssemblyTable: ShowPlate(); return;
         }
 
         if (foodVisual != null) foodVisual.Apply(_onTop);
     }
 
+    void ShowBurners()
+    {
+        int n = GameSession.BurnerCount;
+
+        for (int i = 0; i < _burners.Length; i++)
+        {
+            bool unlocked = i < n;
+
+            if (burnerPads != null && i < burnerPads.Length && burnerPads[i] != null)
+                burnerPads[i].SetActive(unlocked);
+
+            if (burnerVisuals != null && i < burnerVisuals.Length && burnerVisuals[i] != null)
+                burnerVisuals[i].Apply(unlocked ? _burners[i] : null);
+        }
+    }
+
+    void ShowStorage()
+    {
+        if (storageSlots == null) return;
+
+        for (int i = 0; i < storageSlots.Length; i++)
+            storageSlots[i].Apply(i < _items.Count ? _items[i] : null);
+    }
+
+    void ShowPlate()
+    {
+        if (plateSlots == null || _dish == null) return;
+
+        for (int i = 0; i < plateSlots.Length; i++)
+            plateSlots[i].Apply(i < _dish.parts.Count ? _dish.parts[i] : null);
+    }
+
     public void Interact(ChefInteraction chef)
     {
-        // Страву можна віддати тільки на видачу або викинути
+        // Страву можна лише віддати на видачу або викинути
         if (chef.Hand is Dish && type != StationType.ServingCounter && type != StationType.TrashBin)
         {
             Log("страву можна віддати лише на видачу або викинути");
@@ -96,11 +142,85 @@ public class Station : MonoBehaviour
         }
     }
 
+    // ---------- Джерело інгредієнтів ----------
+
     void HandleFridge(ChefInteraction chef)
     {
         if (chef.Hand != null) { Log("руки зайняті"); return; }
+
         chef.Hand = new FoodItem(fridgeFood, fridgeNeedsCutting);
         Log($"взяв {chef.Hand}");
+    }
+
+    // ---------- Дошка ----------
+    // Правила:
+    // - порожня дошка: кладемо продукт, що потребує нарізання;
+    // - на дошці ненарізане, руки порожні: нарізаємо тричі;
+    // - на дошці нарізане, руки порожні: беремо;
+    // - на дошці щось є, у руках продукт для нарізання: обмін.
+
+    void HandleCutting(ChefInteraction chef)
+    {
+        // Порожня дошка
+        if (_onTop == null)
+        {
+            if (chef.Hand == null) { Log("дошка порожня, у руках нічого"); return; }
+            if (!chef.Hand.needsCutting) { Log($"{chef.Hand} не потребує нарізання"); return; }
+
+            PlaceOnBoard(chef.Hand);
+            chef.Hand = null;
+            Log($"поклав {_onTop} на дошку");
+            return;
+        }
+
+        // Дошка зайнята, руки порожні
+        if (chef.Hand == null)
+        {
+            if (_onTop.needsCutting)
+            {
+                PressCut();
+                return;
+            }
+
+            chef.Hand = _onTop;
+            _onTop = null;
+            _cutPresses = 0;
+            ShowCut(0f, false);
+            Log($"взяв {chef.Hand} з дошки");
+            return;
+        }
+
+        // Дошка зайнята, руки теж: обмін, якщо в руках є що нарізати
+        if (chef.Hand.needsCutting)
+        {
+            FoodItem boardItem = _onTop;
+            PlaceOnBoard(chef.Hand);
+            chef.Hand = boardItem;
+            Log($"обмін на дошці: на дошці {_onTop}, у руках {chef.Hand}");
+            return;
+        }
+
+        Log("щоб забрати з дошки, руки мають бути порожні або тримати продукт для нарізання");
+    }
+
+    void PlaceOnBoard(FoodItem item)
+    {
+        _onTop = item;
+        _cutPresses = 0;
+    }
+
+    void PressCut()
+    {
+        _cutPresses++;
+        ShowCut(_cutPresses / 3f, true);
+        Log($"різання {_cutPresses}/3");
+
+        if (_cutPresses >= 3)
+        {
+            _onTop.needsCutting = false;
+            _onTop.state = FoodState.Cut;
+            Log($"{_onTop} нарізано");
+        }
     }
 
     void ShowCut(float progress, bool punch)
@@ -108,70 +228,90 @@ public class Station : MonoBehaviour
         if (foodVisual != null) foodVisual.SetCutProgress(progress, punch);
     }
 
-    void HandleCutting(ChefInteraction chef)
-    {
-        if (_onTop == null)
-        {
-            if (chef.Hand == null) { Log("дошка порожня, у руках нічого"); return; }
-            if (!chef.Hand.needsCutting) { Log($"{chef.Hand} не потребує нарізання"); return; }
-
-            _onTop = chef.Hand;
-            chef.Hand = null;
-            _cutPresses = 0;
-            ShowCut(0f, false);
-            Log($"поклав {_onTop} на дошку");
-            return;
-        }
-
-        if (chef.Hand != null) { Log("щоб різати, руки мають бути порожні"); return; }
-
-        if (_onTop.needsCutting)
-        {
-            _cutPresses++;
-            ShowCut(_cutPresses / 3f, true);
-            Log($"різання {_cutPresses}/3");
-
-            if (_cutPresses >= 3)
-            {
-                _onTop.needsCutting = false;
-                _onTop.state = FoodState.Cut;
-                Log($"{_onTop} нарізано");
-            }
-            return;
-        }
-
-        chef.Hand = _onTop;
-        _onTop = null;
-        ShowCut(0f, false);
-        Log($"взяв {chef.Hand} з дошки");
-    }
+    // ---------- Плита ----------
+    // Наведення на блюдце працює напряму. Якщо наведено на корпус або на
+    // заблоковану комфорку, береться найближча відкрита:
+    // - руки порожні: беремо з найближчої зайнятої;
+    // - руки з їжею: кладемо на найближчу вільну, а якщо всі зайняті,
+    //   міняємо з найближчою зайнятою.
 
     void HandleStove(ChefInteraction chef)
     {
-        if (_onTop == null && chef.Hand != null)
+        int n = Mathf.Min(GameSession.BurnerCount, _burners.Length);
+
+        int slot = chef.TargetSlot;
+        if (slot < 0 || slot >= n) slot = -1;
+
+        // Руки порожні: беремо
+        if (chef.Hand == null)
         {
-            _onTop = chef.Hand;
+            int idx = slot >= 0 ? slot : NearestBurner(chef.transform.position, true);
+            if (idx < 0) { Log("плита порожня"); return; }
+            if (_burners[idx] == null) { Log($"комфорка {idx} порожня"); return; }
+
+            chef.Hand = _burners[idx];
+            _burners[idx] = null;
+            Log($"взяв {chef.Hand} з комфорки {idx}");
+            return;
+        }
+
+        // Руки з їжею
+        int target = slot;
+        if (target < 0)
+        {
+            target = NearestBurner(chef.transform.position, false);      // спершу вільна
+            if (target < 0)
+                target = NearestBurner(chef.transform.position, true);   // усі зайняті: обмін
+        }
+
+        if (target < 0) { Log("немає відкритих комфорок"); return; }
+
+        if (_burners[target] == null)
+        {
+            _burners[target] = chef.Hand;
             chef.Hand = null;
-            Log($"поклав {_onTop} на плиту");
+            Log($"поклав {_burners[target]} на комфорку {target}");
+            return;
         }
-        else if (_onTop != null && chef.Hand == null)
-        {
-            chef.Hand = _onTop;
-            _onTop = null;
-            Log($"забрав {chef.Hand} з плити");
-        }
-        else if (_onTop != null && chef.Hand != null)
-        {
-            FoodItem tmp = _onTop;
-            _onTop = chef.Hand;
-            chef.Hand = tmp;
-            Log($"обмін на плиті: {_onTop}, у руках {chef.Hand}");
-        }
-        else
-        {
-            Log("плита порожня, у руках нічого");
-        }
+
+        // Обмін: їжа з рук іде на комфорку, а з комфорки в руки
+        FoodItem placed = chef.Hand;
+        chef.Hand = _burners[target];
+        _burners[target] = placed;
+        Log($"обмін на комфорці {target}: на плиті {placed}, у руках {chef.Hand}");
     }
+
+    // occupied = true: шукаємо зайняту; false: вільну
+    int NearestBurner(Vector3 from, bool occupied)
+    {
+        int n = Mathf.Min(GameSession.BurnerCount, _burners.Length);
+        int best = -1;
+        float bestDist = float.MaxValue;
+
+        for (int i = 0; i < n; i++)
+        {
+            bool isOccupied = _burners[i] != null;
+            if (isOccupied != occupied) continue;
+
+            float d = (BurnerPosition(i) - from).sqrMagnitude;
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    Vector3 BurnerPosition(int i)
+    {
+        if (burnerPads != null && i < burnerPads.Length && burnerPads[i] != null)
+            return burnerPads[i].transform.position;
+
+        return transform.position;
+    }
+
+    // ---------- Сховище ----------
 
     void HandleStorage(ChefInteraction chef)
     {
@@ -179,7 +319,7 @@ public class Station : MonoBehaviour
         {
             if (_items.Count == 0) { Log("сховище порожнє"); return; }
 
-            // Якщо цілимо в конкретний слот, беремо його; інакше верхній продукт
+            // Наведено на слот: беремо його. Інакше верхній продукт.
             int idx = (chef.TargetSlot >= 0 && chef.TargetSlot < _items.Count)
                 ? chef.TargetSlot
                 : _items.Count - 1;
@@ -198,11 +338,12 @@ public class Station : MonoBehaviour
         chef.Hand = null;
     }
 
+    // ---------- Тарілка ----------
+
     void HandleAssembly(ChefInteraction chef)
     {
         if (chef.Hand == null)
         {
-            // Компоненти назад не беремо. Готову страву беремо цілком, після чого з'являється нова тарілка
             _dish.Refresh();
             if (_dish.state != FoodState.Ready)
             {
@@ -231,6 +372,8 @@ public class Station : MonoBehaviour
         chef.Hand = null;
     }
 
+    // ---------- Видача і смітник ----------
+
     void HandleServing(ChefInteraction chef)
     {
         if (chef.Hand == null) { Log("руки порожні"); return; }
@@ -247,7 +390,6 @@ public class Station : MonoBehaviour
             return;
         }
 
-        // Якщо страва підійшла до клієнта, OrderManager сам покаже результат у логах
         if (OrderManager.Instance.TrySubmit(dish))
             chef.Hand = null;
     }
@@ -255,8 +397,21 @@ public class Station : MonoBehaviour
     void HandleTrash(ChefInteraction chef)
     {
         if (chef.Hand == null) { Log("руки порожні"); return; }
+
         Log($"викинув {chef.Hand}");
         chef.Hand = null;
+    }
+
+    // ---------- Очищення в кінці зміни ----------
+
+    public void ClearContents()
+    {
+        _onTop = null;
+        _cutPresses = 0;
+        _items.Clear();
+        System.Array.Clear(_burners, 0, _burners.Length);
+
+        if (type == StationType.AssemblyTable) _dish = new Dish();
     }
 
     void Log(string msg) => Debug.Log($"[{name}] {msg}");
