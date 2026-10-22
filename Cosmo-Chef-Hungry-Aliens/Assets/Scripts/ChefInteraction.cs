@@ -33,14 +33,24 @@ public class ChefInteraction : MonoBehaviour
 
     void Update()
     {
-        if (Time.timeScale == 0f) return;
         UpdateHeldVisuals();
 
-        _target = FindTargetStation();
+        if (!GameFlow.CanInteract) return;
 
         bool pressed = Input.GetKeyDown(KeyCode.E) || Input.GetMouseButtonDown(0);
         if (!pressed) return;
 
+        // У хабі E працює тільки на ноутбуку
+        if (GameFlow.Phase == GamePhase.Hub)
+        {
+            Laptop laptop = FindLaptop();
+            if (laptop != null) laptop.Use();
+            else Debug.Log("[Hub] дивіться на ноутбук");
+            return;
+        }
+
+        // Зміна: звичайна логіка станцій
+        _target = FindTargetStation();
         Debug.Log($"Натиск. Промінь влучив у: {_lastHit}");
 
         if (_target == null)
@@ -50,6 +60,22 @@ public class ChefInteraction : MonoBehaviour
         }
 
         _target.Interact(this);
+    }
+
+    Laptop FindLaptop()
+    {
+        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+        RaycastHit[] hits = Physics.SphereCastAll(
+            ray, aimRadius, interactDistance, interactMask, QueryTriggerInteraction.Ignore);
+
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+        foreach (var h in hits)
+        {
+            if (h.collider.GetComponentInParent<ChefInteraction>() == this) continue;
+            return h.collider.GetComponentInParent<Laptop>();
+        }
+        return null;
     }
 
     void UpdateHeldVisuals()
