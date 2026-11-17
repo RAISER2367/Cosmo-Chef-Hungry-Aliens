@@ -148,8 +148,14 @@ public class Station : MonoBehaviour
     {
         if (chef.Hand != null) { Log("руки зайняті"); return; }
 
+        if (Inventory.Instance == null || !Inventory.Instance.TryTake(fridgeFood))
+        {
+            Log($"{fridgeFood} закінчився на складі");
+            return;
+        }
+
         chef.Hand = new FoodItem(fridgeFood, fridgeNeedsCutting);
-        Log($"взяв {chef.Hand}");
+        Log($"взяв {chef.Hand}, лишилось {Inventory.Instance.Current(fridgeFood)}");
     }
 
     // ---------- Дошка ----------

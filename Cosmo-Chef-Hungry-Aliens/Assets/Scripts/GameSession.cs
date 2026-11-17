@@ -59,4 +59,10 @@ public static class GameSession
             return n;
         }
     }
+    public static void SpendOrDebt(int cost)
+    {
+        int fromCredits = Mathf.Min(Credits, cost);
+        Credits -= fromCredits;
+        Debt += cost - fromCredits;
+    }
 }
