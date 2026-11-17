@@ -345,22 +345,15 @@ public class Station : MonoBehaviour
         if (chef.Hand == null)
         {
             _dish.Refresh();
-            if (_dish.state != FoodState.Ready)
+            if (_dish.parts.Count == 0)
             {
-                Log($"страва ще не готова ({_dish.parts.Count}/{plateCapacity}), компоненти назад не беремо");
+                Log("тарілка порожня, нема чого брати");
                 return;
             }
 
             chef.Hand = _dish;
-            Log($"взяв готову страву {_dish}");
+            Log($"взяв страву {_dish}");
             _dish = new Dish();
-            return;
-        }
-
-        // Сире і підгоріле в страву не кладемо (за GDD)
-        if (chef.Hand.state == FoodState.Raw || chef.Hand.state == FoodState.Burnt)
-        {
-            Log($"{chef.Hand} не можна покласти в страву");
             return;
         }
 

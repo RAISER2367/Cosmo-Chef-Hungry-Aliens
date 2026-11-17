@@ -28,10 +28,15 @@ public class Alien : MonoBehaviour
     bool _front;
     bool _leaving;
 
-    public void Init(Order order, Transform chef)
+    string _speciesId;
+
+    public void Init(Order order, Transform chef, SpeciesDefinition species)
     {
         _chef = chef;
         _cam = Camera.main != null ? Camera.main.transform : null;
+        _speciesId = species.id;
+
+        moveSpeed = species.moveSpeed; // перейменуйте поле на не-readonly, якщо було serialized const
 
         if (orderText != null) orderText.text = string.Join("\n", order.required);
 

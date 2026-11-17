@@ -31,12 +31,10 @@ public class Dish : FoodItem
 
     public Dish() : base("plate") { }
 
-    // Страва готова, якщо є хоча б один компонент і всі вони готові або нарізані
+    // Страва готова, якщо є хоча б один компонент
     public void Refresh()
     {
-        bool allDone = parts.Count > 0 &&
-                       parts.TrueForAll(p => p.state == FoodState.Ready || p.state == FoodState.Cut);
-        state = allDone ? FoodState.Ready : FoodState.Raw;
+        state = parts.Count > 0 ? FoodState.Ready : FoodState.Raw;
     }
 
     public override string ToString() => $"plate#{id} [{string.Join(", ", parts)}]";

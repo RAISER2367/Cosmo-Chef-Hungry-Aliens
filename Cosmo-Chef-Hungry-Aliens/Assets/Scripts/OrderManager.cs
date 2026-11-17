@@ -8,8 +8,9 @@ public class Order
     public float maxPatience;
     public int reward;
     public Alien alien;
+    public string speciesId;
 
-    public override string ToString() => $"[{string.Join(", ", required)}]";
+    public override string ToString() => $"[{speciesId}: {string.Join(", ", required)}]";
 }
 
 public class OrderManager : MonoBehaviour
@@ -120,23 +121,26 @@ public class OrderManager : MonoBehaviour
 
     void SpawnOrder()
     {
+        SpeciesDefinition species = PreferenceBook.Species[Random.Range(0, PreferenceBook.Species.Length)];
+
         var order = new Order
         {
-            maxPatience = patienceSeconds,
-            patience = patienceSeconds
+            speciesId = species.id,
+            maxPatience = species.patienceSeconds,
+            patience = species.patienceSeconds
         };
 
-        int count = Random.Range(1, maxIngredients + 1);
+        int count = Random.Range(species.minIngredients, species.maxIngredients + 1);
         for (int i = 0; i < count; i++)
             order.required.Add(ingredientPool[Random.Range(0, ingredientPool.Length)]);
 
-        order.reward = rewardPerIngredient * count;
+        order.reward = Mathf.RoundToInt(rewardPerIngredient * count * species.rewardMultiplier);
         order.alien = Instantiate(alienPrefab, spawnPoint.position, spawnPoint.rotation);
-        order.alien.Init(order, chef);
+        order.alien.Init(order, chef, species);
 
         _queue.Add(order);
         AssignQueueSpots();
-        Debug.Log($"[Orders] новий клієнт хоче {order}, нагорода {order.reward}");
+        Debug.Log($"[Orders] {species.displayName} хоче {order}, нагорода {order.reward}");
     }
 
     void AssignQueueSpots()
@@ -154,23 +158,71 @@ public class OrderManager : MonoBehaviour
 
         for (int i = 0; i < _queue.Count; i++)
         {
-            if (!Matches(_queue[i].required, dish)) continue;
+            Order o = _queue[i];
+            if (!SameIngredients(o.required, dish)) continue;
 
-            Order done = _queue[i];
+            var (ok, multiplier, reaction) = EvaluatePreferences(o.speciesId, dish);
+            if (!ok)
+            {
+                Debug.Log($"[Orders] {o.alien.name} відмовився: {reaction}");
+                continue; // пробуємо наступне замовлення в черзі
+            }
+
+            int finalReward = Mathf.RoundToInt(o.reward * multiplier);
+
             Served++;
-            Credits += done.reward;
-            GameSession.AddCredits(done.reward);
-            done.alien.Leave(exitPoint.position, true);
+            Credits += finalReward;
+            GameSession.AddCredits(finalReward);
+            o.alien.Leave(exitPoint.position, true);
             _queue.RemoveAt(i);
             AssignQueueSpots();
 
-            Debug.Log($"[Orders] видано {dish} для {done}, +{done.reward}");
+            Debug.Log($"[Orders] видано {dish} для {o}, {reaction}, +{finalReward}");
             return true;
         }
 
         Debug.Log($"[Orders] {dish} не відповідає жодному замовленню в черзі");
         return false;
     }
+
+    // Склад страви збігається з замовленням за назвами, незалежно від стану
+    static bool SameIngredients(List<string> required, Dish dish)
+    {
+        if (dish.parts.Count != required.Count) return false;
+
+        var need = new List<string>(required);
+        foreach (var part in dish.parts)
+            if (!need.Remove(part.foodName)) return false;
+
+        return need.Count == 0;
+    }
+
+    // Повертає: чи прийнято, множник нагороди, текст реакції для логів/UI
+    static (bool ok, float multiplier, string reaction) EvaluatePreferences(string speciesId, Dish dish)
+    {
+        float sum = 0f;
+        foreach (var part in dish.parts)
+        {
+            PreferenceLevel level = PreferenceBook.GetPreference(speciesId, part.foodName, part.state);
+
+            if (level == PreferenceLevel.Hates)
+                return (false, 0f, $"ненавидить {part.foodName} ({part.state})");
+
+            sum += LevelToMultiplier(level);
+        }
+
+        float avg = dish.parts.Count > 0 ? sum / dish.parts.Count : 1f;
+        return (true, avg, $"середня реакція x{avg:F2}");
+    }
+
+    static float LevelToMultiplier(PreferenceLevel level) => level switch
+    {
+        PreferenceLevel.Dislikes => 0.6f,
+        PreferenceLevel.Neutral => 1.0f,
+        PreferenceLevel.Likes => 1.4f,
+        PreferenceLevel.Loves => 2.0f,
+        _ => 1.0f
+    };
 
     static bool Matches(List<string> required, Dish dish)
     {

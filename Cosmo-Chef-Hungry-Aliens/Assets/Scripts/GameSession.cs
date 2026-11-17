@@ -9,11 +9,21 @@ public static class GameSession
 
     static readonly HashSet<string> owned = new HashSet<string>();
 
+    //public static void ResetAll()
+    //{
+    //    Credits = 0;
+    //    Debt = 300;
+    //    owned.Clear();
+    //}
     public static void ResetAll()
     {
         Credits = 0;
         Debt = 300;
         owned.Clear();
+
+        int seed = System.Environment.TickCount;
+        PreferenceBook.Generate(seed);
+        Debug.Log($"[Preferences] згенеровано з seed {seed}");
     }
 
     public static void AddCredits(int amount) => Credits += amount;
