@@ -15,7 +15,14 @@ public class Order
 
 public class OrderManager : MonoBehaviour
 {
+    [Header("Економіка")]
+    [SerializeField] float markupMultiplier = 3.5f; // нагорода = собівартість інгредієнтів * це число
+
+    [Header("Борг")]
+    [SerializeField] float dailyInterestRate = 0.05f; // 5% на день для Standard/Marathon
+    int _interestDaysApplied;
     public static OrderManager Instance { get; private set; }
+
 
     [Header("Клієнти")]
     [SerializeField] Alien alienPrefab;
@@ -53,9 +60,11 @@ public class OrderManager : MonoBehaviour
         float duration = ShiftSettings.Duration;
 
         _shiftLeft = duration;
-        _spawnTimer = 0f;          // перший клієнт одразу
+        _spawnTimer = 0f;
         _running = true;
+        _interestDaysApplied = 0;
 
+        GameSession.BeginShiftAccounting();
         BuildTimerMilestones(duration);
     }
 
@@ -81,9 +90,18 @@ public class OrderManager : MonoBehaviour
 
     void Update()
     {
+
         if (!_running) return;
 
         _shiftLeft -= Time.deltaTime;
+        float elapsed = ShiftSettings.Duration - _shiftLeft;
+        int dayIndex = Mathf.FloorToInt(elapsed / ShiftSettings.SecondsPerDay);
+
+        while (_interestDaysApplied < dayIndex && _interestDaysApplied < ShiftSettings.Days)
+        {
+            _interestDaysApplied++;
+            if (ShiftSettings.Days > 1) GameSession.ApplyDailyInterest(dailyInterestRate);
+        }
 
         // Дебаг-таймер: while, щоб не пропустити кілька позначок за один кадр
         while (_timerMilestones.Count > 0 && _shiftLeft <= _timerMilestones.Peek())
@@ -100,6 +118,7 @@ public class OrderManager : MonoBehaviour
             EndShift();
             return;
         }
+
 
         _spawnTimer -= Time.deltaTime;
         if (_spawnTimer <= 0f && _queue.Count < queueSpots.Length)
@@ -131,16 +150,22 @@ public class OrderManager : MonoBehaviour
         };
 
         int count = Random.Range(species.minIngredients, species.maxIngredients + 1);
-        for (int i = 0; i < count; i++)
-            order.required.Add(ingredientPool[Random.Range(0, ingredientPool.Length)]);
+        int costSum = 0;
 
-        order.reward = Mathf.RoundToInt(rewardPerIngredient * count * species.rewardMultiplier);
+        for (int i = 0; i < count; i++)
+        {
+            string food = ingredientPool[Random.Range(0, ingredientPool.Length)];
+            order.required.Add(food);
+            costSum += Inventory.Instance != null ? Inventory.Instance.PricePerUnit(food) : 2;
+        }
+
+        order.reward = Mathf.RoundToInt(costSum * markupMultiplier * species.rewardMultiplier);
         order.alien = Instantiate(alienPrefab, spawnPoint.position, spawnPoint.rotation);
         order.alien.Init(order, chef, species);
 
         _queue.Add(order);
         AssignQueueSpots();
-        Debug.Log($"[Orders] {species.displayName} хоче {order}, нагорода {order.reward}");
+        Debug.Log($"[Orders] {species.displayName} хоче {order}, собівартість {costSum}, нагорода {order.reward}");
     }
 
     void AssignQueueSpots()

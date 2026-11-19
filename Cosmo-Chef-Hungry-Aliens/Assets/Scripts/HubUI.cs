@@ -135,13 +135,19 @@ public class HubUI : MonoBehaviour
 
         int total = served + lost;
         int percent = total > 0 ? Mathf.RoundToInt(100f * served / total) : 0;
+        int revenue = GameSession.ShiftRevenue;
+        int expenses = GameSession.ShiftExpenses;
+        int net = revenue - expenses;
 
         resultText.text =
             "Зміну завершено\n\n" +
             $"Обслуговано: {served}\n" +
             $"Втрачено: {lost}\n" +
-            $"Ефективність: {percent}%\n" +
-            $"Заробіток: {credits} кредитів";
+            $"Ефективність: {percent}%\n\n" +
+            $"Виручка: {revenue}\n" +
+            $"Витрати: {expenses}\n" +
+            $"Чистий прибуток: {net}\n\n" +
+            $"Поточний борг: {GameSession.Debt}";
 
         resultPanel.SetActive(true);
         GameFlow.Set(GamePhase.Result);

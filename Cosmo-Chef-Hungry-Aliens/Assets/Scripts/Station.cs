@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum StationType { Fridge, CuttingTable, Stove, AssemblyTable, ServingCounter, TrashBin, StorageTable }
+public enum StationType { Fridge, CuttingTable, Stove, AssemblyTable, ServingCounter, TrashBin, StorageTable, SupplyTerminal }
 
 public class Station : MonoBehaviour
 {
@@ -9,7 +9,10 @@ public class Station : MonoBehaviour
 
     [Header("Тільки для Fridge")]
     public string fridgeFood = "meat";
+
     public bool fridgeNeedsCutting = false;
+    [Header("Тільки для SupplyTerminal")]
+    public string supplyIngredient = "meat";
 
     [Header("Тільки для StorageTable")]
     public int capacity = 4;
@@ -139,7 +142,21 @@ public class Station : MonoBehaviour
             case StationType.ServingCounter: HandleServing(chef); break;
             case StationType.TrashBin: HandleTrash(chef); break;
             case StationType.StorageTable: HandleStorage(chef); break;
+            case StationType.SupplyTerminal: HandleSupplyTerminal(chef); break;
         }
+    }
+    void HandleSupplyTerminal(ChefInteraction chef)
+    {
+        if (Inventory.Instance == null) { Log("немає Inventory у сцені"); return; }
+
+        bool ordered = Inventory.Instance.TryOrderSupply(supplyIngredient, out float eta);
+
+        if (ordered)
+            Log($"замовив {supplyIngredient}, приліт за {eta:F0}с");
+        else if (eta > 0f)
+            Log($"{supplyIngredient} вже в дорозі, залишилось {eta:F0}с");
+        else
+            Log($"{supplyIngredient} на складі й так повний");
     }
 
     // ---------- Джерело інгредієнтів ----------
