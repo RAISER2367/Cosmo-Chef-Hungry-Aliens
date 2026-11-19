@@ -1,20 +1,16 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 
-// Стан між змінами: кредити, борг, куплені апгрейди
 public static class GameSession
 {
+    public static event Action OnBalanceChanged;
+
     public static int Credits { get; private set; }
-    public static int Debt { get; private set; } = 300; // стартовий борг, підлаштуйте
+    public static int Debt { get; private set; } = 300;
 
     static readonly HashSet<string> owned = new HashSet<string>();
 
-    //public static void ResetAll()
-    //{
-    //    Credits = 0;
-    //    Debt = 300;
-    //    owned.Clear();
-    //}
     public static void ResetAll()
     {
         Credits = 0;
@@ -24,9 +20,23 @@ public static class GameSession
         int seed = System.Environment.TickCount;
         PreferenceBook.Generate(seed);
         Debug.Log($"[Preferences] згенеровано з seed {seed}");
+
+        OnBalanceChanged?.Invoke();
     }
 
-    public static void AddCredits(int amount) => Credits += amount;
+    public static void AddCredits(int amount)
+    {
+        Credits += amount;
+        OnBalanceChanged?.Invoke();
+    }
+
+    public static void SpendOrDebt(int cost)
+    {
+        int fromCredits = Mathf.Min(Credits, cost);
+        Credits -= fromCredits;
+        Debt += cost - fromCredits;
+        OnBalanceChanged?.Invoke();
+    }
 
     public static bool Owns(string id) => !string.IsNullOrEmpty(id) && owned.Contains(id);
 
@@ -36,6 +46,7 @@ public static class GameSession
 
         Credits -= u.price;
         owned.Add(u.id);
+        OnBalanceChanged?.Invoke();
         return true;
     }
 
@@ -44,10 +55,10 @@ public static class GameSession
         int pay = Mathf.Clamp(amount, 0, Mathf.Min(Debt, Credits));
         Credits -= pay;
         Debt -= pay;
+        if (pay > 0) OnBalanceChanged?.Invoke();
         return pay;
     }
 
-    // Робочих комфорок на плиті: одна базова плюс куплені
     public static int BurnerCount
     {
         get
@@ -58,11 +69,5 @@ public static class GameSession
             if (Owns("burner4")) n++;
             return n;
         }
-    }
-    public static void SpendOrDebt(int cost)
-    {
-        int fromCredits = Mathf.Min(Credits, cost);
-        Credits -= fromCredits;
-        Debt += cost - fromCredits;
     }
 }

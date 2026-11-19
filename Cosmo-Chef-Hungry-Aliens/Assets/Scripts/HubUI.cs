@@ -21,6 +21,7 @@ public class HubUI : MonoBehaviour
     [SerializeField] Button standardButton;
     [SerializeField] Button marathonButton;
     [SerializeField] Button closeButton;
+    [SerializeField] Button notebookButton;
 
     [Header("Маркетплейс")]
     [SerializeField] UpgradeRow rowPrefab;
@@ -58,6 +59,7 @@ public class HubUI : MonoBehaviour
         standardButton.onClick.AddListener(() => StartShift(3));
         marathonButton.onClick.AddListener(() => StartShift(7));
         continueButton.onClick.AddListener(ContinueAfterResult);
+        notebookButton.onClick.AddListener(() => PreferenceBookUI.Instance.Open());
 
         HideAll();
     }
@@ -70,6 +72,8 @@ public class HubUI : MonoBehaviour
     void Update()
     {
         hubHint.SetActive(GameFlow.Phase == GamePhase.Hub && !_hintUsed);
+
+        if (PreferenceBookUI.IsOpen) return; // <--- ДОДАТИ ЦЕЙ РЯДОК
 
         if (GameFlow.Phase == GamePhase.Laptop && Input.GetKeyDown(KeyCode.Escape))
         {
@@ -136,7 +140,7 @@ public class HubUI : MonoBehaviour
             "Зміну завершено\n\n" +
             $"Обслуговано: {served}\n" +
             $"Втрачено: {lost}\n" +
-            $"Ефективність: {percent}%" +
+            $"Ефективність: {percent}%\n" +
             $"Заробіток: {credits} кредитів";
 
         resultPanel.SetActive(true);

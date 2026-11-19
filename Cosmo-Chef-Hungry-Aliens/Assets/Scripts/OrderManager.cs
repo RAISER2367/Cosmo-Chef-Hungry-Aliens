@@ -152,37 +152,75 @@ public class OrderManager : MonoBehaviour
         }
     }
 
+    //public bool TrySubmit(Dish dish)
+    //{
+    //    if (!_running) return false;
+
+    //    for (int i = 0; i < _queue.Count; i++)
+    //    {
+    //        Order o = _queue[i];
+    //        if (!SameIngredients(o.required, dish)) continue;
+
+    //        var (ok, multiplier, reaction) = EvaluatePreferences(o.speciesId, dish);
+    //        if (!ok)
+    //        {
+    //            Debug.Log($"[Orders] {o.alien.name} відмовився: {reaction}");
+    //            continue; // пробуємо наступне замовлення в черзі
+    //        }
+
+    //        int finalReward = Mathf.RoundToInt(o.reward * multiplier);
+
+    //        Served++;
+    //        Credits += finalReward;
+    //        GameSession.AddCredits(finalReward);
+    //        o.alien.Leave(exitPoint.position, true);
+    //        _queue.RemoveAt(i);
+    //        AssignQueueSpots();
+
+    //        Debug.Log($"[Orders] видано {dish} для {o}, {reaction}, +{finalReward}");
+    //        return true;
+    //    }
+
+    //    Debug.Log($"[Orders] {dish} не відповідає жодному замовленню в черзі");
+    //    return false;
+    //}
+
     public bool TrySubmit(Dish dish)
     {
         if (!_running) return false;
 
-        for (int i = 0; i < _queue.Count; i++)
+        if (_queue.Count == 0)
         {
-            Order o = _queue[i];
-            if (!SameIngredients(o.required, dish)) continue;
-
-            var (ok, multiplier, reaction) = EvaluatePreferences(o.speciesId, dish);
-            if (!ok)
-            {
-                Debug.Log($"[Orders] {o.alien.name} відмовився: {reaction}");
-                continue; // пробуємо наступне замовлення в черзі
-            }
-
-            int finalReward = Mathf.RoundToInt(o.reward * multiplier);
-
-            Served++;
-            Credits += finalReward;
-            GameSession.AddCredits(finalReward);
-            o.alien.Leave(exitPoint.position, true);
-            _queue.RemoveAt(i);
-            AssignQueueSpots();
-
-            Debug.Log($"[Orders] видано {dish} для {o}, {reaction}, +{finalReward}");
-            return true;
+            Debug.Log("[Orders] черга порожня, нікому видавати");
+            return false;
         }
 
-        Debug.Log($"[Orders] {dish} не відповідає жодному замовленню в черзі");
-        return false;
+        Order first = _queue[0];
+
+        if (!SameIngredients(first.required, dish))
+        {
+            Debug.Log($"[Orders] {dish} не відповідає замовленню першого клієнта {first}");
+            return false;
+        }
+
+        var (ok, multiplier, reaction) = EvaluatePreferences(first.speciesId, dish);
+        if (!ok)
+        {
+            Debug.Log($"[Orders] перший клієнт ({first.speciesId}) відмовився: {reaction}");
+            return false;
+        }
+
+        int finalReward = Mathf.RoundToInt(first.reward * multiplier);
+
+        Served++;
+        Credits += finalReward;
+        GameSession.AddCredits(finalReward);
+        first.alien.Leave(exitPoint.position, true);
+        _queue.RemoveAt(0);
+        AssignQueueSpots();
+
+        Debug.Log($"[Orders] видано {dish} для {first}, {reaction}, +{finalReward}");
+        return true;
     }
 
     // Склад страви збігається з замовленням за назвами, незалежно від стану
