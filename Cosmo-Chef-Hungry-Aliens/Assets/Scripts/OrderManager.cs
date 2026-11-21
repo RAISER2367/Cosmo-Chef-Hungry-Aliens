@@ -50,6 +50,26 @@ public class OrderManager : MonoBehaviour
     public int Lost { get; private set; }
     public int Credits { get; private set; }
 
+    [Header("Хвиля спавну")]
+    [SerializeField] float baseInterval = 14f;
+    [SerializeField] float peakInterval = 6f;
+    [SerializeField] AnimationCurve wave = AnimationCurve.EaseInOut(0, 0, 1, 1); // підняти пік у редакторі ~0.5
+
+    float CurrentSpawnInterval()
+    {
+        float dayProgress = Mathf.Repeat(
+            (ShiftSettings.Duration - _shiftLeft) / ShiftSettings.SecondsPerDay, 1f);
+
+        // Трикутна хвиля: 0 на початку/кінці дня, 1 на середині
+        float intensity = 1f - Mathf.Abs(dayProgress - 0.5f) * 2f;
+        intensity = wave.Evaluate(intensity);
+
+        int dayIndex = Mathf.FloorToInt((ShiftSettings.Duration - _shiftLeft) / ShiftSettings.SecondsPerDay);
+        float dayHardening = 1f - dayIndex * 0.08f; // кожен наступний день трохи щільніше
+
+        return Mathf.Lerp(baseInterval, peakInterval, intensity) * Mathf.Max(0.5f, dayHardening);
+    }
+
     void Awake()
     {
         Instance = this;
@@ -124,7 +144,7 @@ public class OrderManager : MonoBehaviour
         if (_spawnTimer <= 0f && _queue.Count < queueSpots.Length)
         {
             SpawnOrder();
-            _spawnTimer = spawnInterval;
+            _spawnTimer = CurrentSpawnInterval();
         }
 
         // Йдемо з кінця, щоб видалення не зсувало індекси
@@ -141,6 +161,9 @@ public class OrderManager : MonoBehaviour
     void SpawnOrder()
     {
         SpeciesDefinition species = PreferenceBook.Species[Random.Range(0, PreferenceBook.Species.Length)];
+        Served = 0;
+        Lost = 0;
+        Credits = 0;
 
         var order = new Order
         {
@@ -150,22 +173,37 @@ public class OrderManager : MonoBehaviour
         };
 
         int count = Random.Range(species.minIngredients, species.maxIngredients + 1);
-        int costSum = 0;
-
         for (int i = 0; i < count; i++)
-        {
-            string food = ingredientPool[Random.Range(0, ingredientPool.Length)];
-            order.required.Add(food);
-            costSum += Inventory.Instance != null ? Inventory.Instance.PricePerUnit(food) : 2;
-        }
+            order.required.Add(PickWeightedFood(species.id));
 
-        order.reward = Mathf.RoundToInt(costSum * markupMultiplier * species.rewardMultiplier);
+        order.reward = 0; // більше не використовується, рахує Checkout.BaseCost при видачі
         order.alien = Instantiate(alienPrefab, spawnPoint.position, spawnPoint.rotation);
         order.alien.Init(order, chef, species);
 
         _queue.Add(order);
         AssignQueueSpots();
-        Debug.Log($"[Orders] {species.displayName} хоче {order}, собівартість {costSum}, нагорода {order.reward}");
+        Debug.Log($"[Orders] {species.displayName} хоче {order}");
+    }
+
+    // 75% шанс узяти інгредієнт+стан, який цей вид Likes/Loves хоч у якомусь валідному стані;
+    // 25% — чистий нейтральний випадковий вибір
+    string PickWeightedFood(string speciesId)
+    {
+        if (Random.value < 0.75f)
+        {
+            var liked = new List<string>();
+            foreach (string food in PreferenceBook.Foods)
+                foreach (FoodState state in PreferenceBook.StatesOf(food))
+                {
+                    PreferenceLevel lvl = PreferenceBook.GetPreference(speciesId, food, state);
+                    if (lvl == PreferenceLevel.Likes || lvl == PreferenceLevel.Loves)
+                        liked.Add(food);
+                }
+
+            if (liked.Count > 0) return liked[Random.Range(0, liked.Count)];
+        }
+
+        return ingredientPool[Random.Range(0, ingredientPool.Length)];
     }
 
     void AssignQueueSpots()
@@ -228,14 +266,17 @@ public class OrderManager : MonoBehaviour
             return false;
         }
 
-        var (ok, multiplier, reaction) = EvaluatePreferences(first.speciesId, dish);
-        if (!ok)
+        float patienceFraction = first.maxPatience > 0f ? first.patience / first.maxPatience : 0f;
+        Checkout.Result result = Checkout.Evaluate(first.speciesId, dish, patienceFraction);
+
+        if (result.refused)
         {
-            Debug.Log($"[Orders] перший клієнт ({first.speciesId}) відмовився: {reaction}");
+            Debug.Log($"[Orders] перший клієнт ({first.speciesId}) відмовився: {result.reason}");
             return false;
         }
 
-        int finalReward = Mathf.RoundToInt(first.reward * multiplier);
+        int baseCost = Checkout.BaseCost(dish, markupMultiplier);
+        int finalReward = Mathf.RoundToInt(baseCost * result.payFactor);
 
         Served++;
         Credits += finalReward;
@@ -244,7 +285,7 @@ public class OrderManager : MonoBehaviour
         _queue.RemoveAt(0);
         AssignQueueSpots();
 
-        Debug.Log($"[Orders] видано {dish} для {first}, {reaction}, +{finalReward}");
+        Debug.Log($"[Orders] видано {dish} для {first}, база {baseCost}, {result.reason} -> +{finalReward}");
         return true;
     }
 
@@ -259,47 +300,6 @@ public class OrderManager : MonoBehaviour
 
         return need.Count == 0;
     }
-
-    // Повертає: чи прийнято, множник нагороди, текст реакції для логів/UI
-    static (bool ok, float multiplier, string reaction) EvaluatePreferences(string speciesId, Dish dish)
-    {
-        float sum = 0f;
-        foreach (var part in dish.parts)
-        {
-            PreferenceLevel level = PreferenceBook.GetPreference(speciesId, part.foodName, part.state);
-
-            if (level == PreferenceLevel.Hates)
-                return (false, 0f, $"ненавидить {part.foodName} ({part.state})");
-
-            sum += LevelToMultiplier(level);
-        }
-
-        float avg = dish.parts.Count > 0 ? sum / dish.parts.Count : 1f;
-        return (true, avg, $"середня реакція x{avg:F2}");
-    }
-
-    static float LevelToMultiplier(PreferenceLevel level) => level switch
-    {
-        PreferenceLevel.Dislikes => 0.6f,
-        PreferenceLevel.Neutral => 1.0f,
-        PreferenceLevel.Likes => 1.4f,
-        PreferenceLevel.Loves => 2.0f,
-        _ => 1.0f
-    };
-
-    static bool Matches(List<string> required, Dish dish)
-    {
-        if (dish.state != FoodState.Ready) return false;
-        if (dish.parts.Count != required.Count) return false;
-
-        var need = new List<string>(required);
-        foreach (var part in dish.parts)
-        {
-            if (!need.Remove(part.foodName)) return false;
-        }
-        return need.Count == 0;
-    }
-
     void FailOrder(int index)
     {
         Order o = _queue[index];
@@ -319,7 +319,7 @@ public class OrderManager : MonoBehaviour
         foreach (Station s in FindObjectsByType<Station>())
             s.ClearContents();
 
-        Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, заробіто: {Credits}");
+        Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, зароблено: {Credits}");
 
         if (HubUI.Instance != null)
             HubUI.Instance.ShowResult(Served, Lost, Credits);

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -19,26 +20,30 @@ public static class PreferenceBook
 {
     public static readonly SpeciesDefinition[] Species =
     {
-        new SpeciesDefinition { id = "rookie", displayName = "Новачок",   patienceSeconds = 45f, moveSpeed = 1.6f, minIngredients = 1, maxIngredients = 2, rewardMultiplier = 1.0f },
-        new SpeciesDefinition { id = "vip",     displayName = "Вибагливий", patienceSeconds = 55f, moveSpeed = 1.3f, minIngredients = 2, maxIngredients = 3, rewardMultiplier = 1.5f },
-        new SpeciesDefinition { id = "grump",   displayName = "Буркотун",  patienceSeconds = 30f, moveSpeed = 2.0f, minIngredients = 1, maxIngredients = 3, rewardMultiplier = 1.2f },
+        new SpeciesDefinition { id = "rookie", displayName = "Новачок",    patienceSeconds = 45f, moveSpeed = 1.6f, minIngredients = 1, maxIngredients = 2, rewardMultiplier = 1.0f },
+        new SpeciesDefinition { id = "vip",    displayName = "Вибагливий", patienceSeconds = 55f, moveSpeed = 1.3f, minIngredients = 2, maxIngredients = 3, rewardMultiplier = 1.5f },
+        new SpeciesDefinition { id = "grump",  displayName = "Буркотун",   patienceSeconds = 30f, moveSpeed = 2.0f, minIngredients = 1, maxIngredients = 3, rewardMultiplier = 1.2f },
     };
 
-    static readonly string[] _foods = { "meat", "cucumber" };
-    static readonly FoodState[] _states = { FoodState.Raw, FoodState.Cut, FoodState.Ready, FoodState.Burnt };
+    // Єдине джерело правди про те, які стани фізично можливі для кожного продукту
+    static readonly Dictionary<string, FoodState[]> _validStates = new Dictionary<string, FoodState[]>
+    {
+        { "meat",     new[] { FoodState.Raw, FoodState.Ready, FoodState.Burnt } },
+        { "cucumber", new[] { FoodState.Raw, FoodState.Cut, FoodState.Ready, FoodState.Burnt } },
+    };
+
+    public static IEnumerable<string> Foods => _validStates.Keys;
+
+    public static FoodState[] StatesOf(string food) =>
+        _validStates.TryGetValue(food, out var s) ? s : Array.Empty<FoodState>();
+
+    public static bool IsValidCombination(string food, FoodState state) =>
+        _validStates.TryGetValue(food, out var states) && Array.IndexOf(states, state) >= 0;
 
     // speciesId -> (food, state) -> рівень
     static Dictionary<string, Dictionary<(string, FoodState), PreferenceLevel>> _table;
 
     public static int Seed { get; private set; }
-
-    // Викликається один раз на старті гри (GameSession.ResetAll)
-    // Перевірка, чи може продукт набути такого стану в грі
-    public static bool IsValidCombination(string food, FoodState state)
-    {
-        if (food == "meat" && state == FoodState.Cut) return false;
-        return true;
-    }
 
     public static void Generate(int seed)
     {
@@ -50,28 +55,51 @@ public static class PreferenceBook
         {
             var map = new Dictionary<(string, FoodState), PreferenceLevel>();
 
-            foreach (var food in _foods)
+            foreach (string food in Foods)
             {
-                foreach (var state in _states)
+                foreach (FoodState state in StatesOf(food))
                 {
-                    if (!IsValidCombination(food, state)) continue;
-
                     if (state == FoodState.Burnt)
                     {
                         map[(food, state)] = PreferenceLevel.Hates;
                         continue;
                     }
 
-                    PreferenceLevel level = (PreferenceLevel)rng.Next(0, 5);
-                    map[(food, state)] = level;
+                    map[(food, state)] = (PreferenceLevel)rng.Next(0, 5);
                 }
             }
 
+            EnsureSolvablePerFood(map, rng);
             EnsureVariety(map, rng);
             _table[sp.id] = map;
         }
     }
 
+    // Гарантує, що для кожного продукту є хоча б один стан >= Neutral (без штрафу)
+    static void EnsureSolvablePerFood(Dictionary<(string, FoodState), PreferenceLevel> map, System.Random rng)
+    {
+        foreach (string food in Foods)
+        {
+            var valid = new List<FoodState>();
+            bool hasAcceptable = false;
+
+            foreach (FoodState state in StatesOf(food))
+            {
+                if (state == FoodState.Burnt) continue;
+                valid.Add(state);
+                if (map[(food, state)] >= PreferenceLevel.Neutral)
+                    hasAcceptable = true;
+            }
+
+            if (!hasAcceptable && valid.Count > 0)
+            {
+                FoodState chosen = valid[rng.Next(valid.Count)];
+                map[(food, chosen)] = (PreferenceLevel)rng.Next(2, 5); // Neutral, Likes або Loves
+            }
+        }
+    }
+
+    // Гарантує наявність хоча б одного Loves і одного Hates (крім Burnt) у кожного виду
     static void EnsureVariety(Dictionary<(string, FoodState), PreferenceLevel> map, System.Random rng)
     {
         bool hasLoves = false, hasHates = false;
@@ -90,9 +118,19 @@ public static class PreferenceBook
 
         if (!hasHates)
         {
-            var nonLoves = candidates.FindAll(k => map[k] != PreferenceLevel.Loves);
-            if (nonLoves.Count > 0)
-                map[nonLoves[rng.Next(nonLoves.Count)]] = PreferenceLevel.Hates;
+            var safeForHates = candidates.FindAll(k =>
+            {
+                if (map[k] == PreferenceLevel.Loves) return false;
+                foreach (var other in candidates)
+                {
+                    if (other.Item1 == k.Item1 && other.Item2 != k.Item2 && map[other] >= PreferenceLevel.Neutral)
+                        return true;
+                }
+                return false;
+            });
+
+            if (safeForHates.Count > 0)
+                map[safeForHates[rng.Next(safeForHates.Count)]] = PreferenceLevel.Hates;
         }
     }
 
@@ -102,7 +140,6 @@ public static class PreferenceBook
         return map.TryGetValue((food, state), out var level) ? level : PreferenceLevel.Neutral;
     }
 
-    // Для UI блокнота: повний список рядків для одного виду
     public static IEnumerable<(string food, FoodState state, PreferenceLevel level)> GetAll(string speciesId)
     {
         if (_table == null || !_table.TryGetValue(speciesId, out var map)) yield break;
