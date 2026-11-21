@@ -7,6 +7,7 @@ public class PreferenceBookUI : MonoBehaviour
 {
     public static PreferenceBookUI Instance { get; private set; }
     public static bool IsOpen => Instance != null && Instance._isOpen;
+    public static bool ConsumedEscape => IsOpen || (Instance != null && Instance._closedFrame == Time.frameCount);
 
     [Header("Панель")]
     [SerializeField] GameObject panel;
@@ -15,6 +16,8 @@ public class PreferenceBookUI : MonoBehaviour
     [Header("Вкладки видів (у тому ж порядку, що й PreferenceBook.Species)")]
     [SerializeField] Button[] speciesTabButtons;
     [SerializeField] Image[] speciesTabHighlights;
+    [SerializeField] Color activeTabColor = new Color(0.6f, 0.6f, 0.6f, 1f);
+    [SerializeField] Color inactiveTabColor = Color.white;
 
     [Header("Рядки вподобань")]
     [SerializeField] PreferenceRow rowPrefab;
@@ -35,6 +38,8 @@ public class PreferenceBookUI : MonoBehaviour
     [SerializeField] string cucumberLabel = "огірок";
 
     bool _isOpen;
+    int _currentTab;
+    int _closedFrame = -1;
     float _previousTimeScale = 1f;
 
     void Awake()
@@ -53,10 +58,24 @@ public class PreferenceBookUI : MonoBehaviour
 
     void Update()
     {
-        if (_isOpen && Input.GetKeyDown(KeyCode.Escape))
+        if (_isOpen)
         {
-            Close();
-            return;
+            int count = PreferenceBook.Species.Length;
+
+            if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
+            {
+                if (_currentTab > 0) ShowSpecies(_currentTab - 1);
+            }
+            else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
+            {
+                if (_currentTab < count - 1) ShowSpecies(_currentTab + 1);
+            }
+
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                Close();
+                return;
+            }
         }
 
         if (GameFlow.Phase != GamePhase.Shift) return;
@@ -74,10 +93,13 @@ public class PreferenceBookUI : MonoBehaviour
         _isOpen = true;
 
         panel.SetActive(true);
-        ShowSpecies(0);
 
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        // Кнопка закриття видима лише в ноутбуці, під час зміни ховаємо
+        if (closeButton != null)
+            closeButton.gameObject.SetActive(GameFlow.Phase != GamePhase.Shift);
+
+        ShowSpecies(0);
+        SyncCursor();
 
         if (GameFlow.Phase == GamePhase.Shift && shiftOpenTimeScale < 1f)
         {
@@ -90,25 +112,40 @@ public class PreferenceBookUI : MonoBehaviour
     {
         if (!_isOpen) return;
         _isOpen = false;
+        _closedFrame = Time.frameCount;
 
         panel.SetActive(false);
 
-        // Скидаємо фокус з кнопки, щоб вона не лишалася білою при наступному відкритті
         if (EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(null);
 
-        // Повертаємо курсор у стан, який відповідає поточній фазі (Shift -> прихований, Laptop -> видимий)
-        bool locked = GameFlow.CanMove;
-        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
-        Cursor.visible = !locked;
+        SyncCursor();
 
         if (!Mathf.Approximately(Time.timeScale, _previousTimeScale))
             Time.timeScale = _previousTimeScale;
     }
 
+    void SyncCursor()
+    {
+        bool locked = GameFlow.CanMove;
+        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !locked;
+    }
+
     void ShowSpecies(int index)
     {
+        _currentTab = index;
         SpeciesDefinition species = PreferenceBook.Species[index];
+
+        for (int i = 0; i < speciesTabButtons.Length; i++)
+        {
+            if (speciesTabButtons[i] == null) continue;
+
+            ColorBlock colors = speciesTabButtons[i].colors;
+            colors.normalColor = i == index ? activeTabColor : inactiveTabColor;
+            colors.selectedColor = colors.normalColor;
+            speciesTabButtons[i].colors = colors;
+        }
 
         for (int i = 0; i < speciesTabHighlights.Length; i++)
             if (speciesTabHighlights[i] != null)

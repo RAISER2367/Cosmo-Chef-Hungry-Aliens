@@ -33,6 +33,13 @@ public static class PreferenceBook
     public static int Seed { get; private set; }
 
     // Викликається один раз на старті гри (GameSession.ResetAll)
+    // Перевірка, чи може продукт набути такого стану в грі
+    public static bool IsValidCombination(string food, FoodState state)
+    {
+        if (food == "meat" && state == FoodState.Cut) return false;
+        return true;
+    }
+
     public static void Generate(int seed)
     {
         Seed = seed;
@@ -47,22 +54,20 @@ public static class PreferenceBook
             {
                 foreach (var state in _states)
                 {
-                    // Підгоріле ніхто не любить, незалежно від виду
+                    if (!IsValidCombination(food, state)) continue;
+
                     if (state == FoodState.Burnt)
                     {
                         map[(food, state)] = PreferenceLevel.Hates;
                         continue;
                     }
 
-                    PreferenceLevel level = (PreferenceLevel)rng.Next(0, 5); // Hates..Loves
+                    PreferenceLevel level = (PreferenceLevel)rng.Next(0, 5);
                     map[(food, state)] = level;
                 }
             }
 
-            // Гарантуємо, що в кожного виду є хоч один Loves і один Hates (крім Burnt),
-            // інакше блокнот виглядає одноманітно
             EnsureVariety(map, rng);
-
             _table[sp.id] = map;
         }
     }
@@ -70,17 +75,25 @@ public static class PreferenceBook
     static void EnsureVariety(Dictionary<(string, FoodState), PreferenceLevel> map, System.Random rng)
     {
         bool hasLoves = false, hasHates = false;
-        List<(string, FoodState)> keys = new List<(string, FoodState)>(map.Keys);
+        var candidates = new List<(string, FoodState)>();
 
-        foreach (var k in keys)
+        foreach (var kv in map)
         {
-            if (k.Item2 == FoodState.Burnt) continue;
-            if (map[k] == PreferenceLevel.Loves) hasLoves = true;
-            if (map[k] == PreferenceLevel.Hates) hasHates = true;
+            if (kv.Key.Item2 == FoodState.Burnt) continue;
+            candidates.Add(kv.Key);
+            if (kv.Value == PreferenceLevel.Loves) hasLoves = true;
+            if (kv.Value == PreferenceLevel.Hates) hasHates = true;
         }
 
-        if (!hasLoves) map[keys[rng.Next(keys.Count)]] = PreferenceLevel.Loves;
-        if (!hasHates) map[keys[rng.Next(keys.Count)]] = PreferenceLevel.Hates;
+        if (candidates.Count == 0) return;
+        if (!hasLoves) map[candidates[rng.Next(candidates.Count)]] = PreferenceLevel.Loves;
+
+        if (!hasHates)
+        {
+            var nonLoves = candidates.FindAll(k => map[k] != PreferenceLevel.Loves);
+            if (nonLoves.Count > 0)
+                map[nonLoves[rng.Next(nonLoves.Count)]] = PreferenceLevel.Hates;
+        }
     }
 
     public static PreferenceLevel GetPreference(string speciesId, string food, FoodState state)

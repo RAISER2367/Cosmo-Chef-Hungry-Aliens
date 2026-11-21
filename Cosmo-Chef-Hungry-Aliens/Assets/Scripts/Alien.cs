@@ -30,15 +30,51 @@ public class Alien : MonoBehaviour
 
     string _speciesId;
 
+    // звичайний спавн прибульців
+
+    //public void Init(Order order, Transform chef, SpeciesDefinition species)
+    //{
+    //    _chef = chef;
+    //    _cam = Camera.main != null ? Camera.main.transform : null;
+    //    _speciesId = species.id;
+
+    //    moveSpeed = species.moveSpeed; // перейменуйте поле на не-readonly, якщо було serialized const
+
+    //    if (orderText != null) orderText.text = string.Join("\n", order.required);
+
+    //    _spot = _goal = transform.position;
+    //    _wander = PickWander();
+    //}
+
     public void Init(Order order, Transform chef, SpeciesDefinition species)
     {
         _chef = chef;
         _cam = Camera.main != null ? Camera.main.transform : null;
         _speciesId = species.id;
 
-        moveSpeed = species.moveSpeed; // перейменуйте поле на не-readonly, якщо було serialized const
+        moveSpeed = species.moveSpeed;
 
-        if (orderText != null) orderText.text = string.Join("\n", order.required);
+        // Візуальна різниця за силуетом капсули
+        //transform.localScale = species.id switch
+        //{
+        //    "vip" => new Vector3(0.85f, 1.3f, 0.85f),  // високий і стрункий
+        //    "grump" => new Vector3(1.25f, 0.8f, 1.25f),  // низький і кремезний
+        //    _ => Vector3.one                       // стандартний новачок
+        //};
+
+        if (orderText != null)
+        {
+            string badgeColor = species.id switch
+            {
+                "vip" => "#FFD700", // золотий
+                "grump" => "#FF7043", // коралово-червоний
+                _ => "#4FC3F7"  // блакитний
+            };
+
+            orderText.text =
+                $"<color={badgeColor}><b>[{species.displayName.ToUpper()}]</b></color>\n" +
+                string.Join("\n", order.required);
+        }
 
         _spot = _goal = transform.position;
         _wander = PickWander();

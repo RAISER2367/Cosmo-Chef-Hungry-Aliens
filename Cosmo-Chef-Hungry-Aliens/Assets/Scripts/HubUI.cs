@@ -73,7 +73,7 @@ public class HubUI : MonoBehaviour
     {
         hubHint.SetActive(GameFlow.Phase == GamePhase.Hub && !_hintUsed);
 
-        if (PreferenceBookUI.IsOpen) return; // <--- ДОДАТИ ЦЕЙ РЯДОК
+        if (PreferenceBookUI.ConsumedEscape) return;
 
         if (GameFlow.Phase == GamePhase.Laptop && Input.GetKeyDown(KeyCode.Escape))
         {
