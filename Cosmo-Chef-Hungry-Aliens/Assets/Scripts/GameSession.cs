@@ -97,15 +97,18 @@ public static class GameSession
         }
     }
 
-    // Бонус місткості холодильника від апгрейдів
     public static int FridgeCapacityBonus
     {
-        get
-        {
-            int bonus = 0;
-            if (Owns("fridge_cap1")) bonus += 10;
-            if (Owns("fridge_cap2")) bonus += 10;
-            return bonus;
-        }
+        get { int b = 0; if (Owns("fridge_cap1")) b += 10; if (Owns("fridge_cap2")) b += 10; return b; }
     }
+
+    public static float AutoBuyThreshold =>
+        Owns("autobuy2") ? 0.5f : Owns("autobuy1") ? 0.125f : 0f;
+
+    public static float TurboDroneLeadTime(float baseLeadTime) =>
+        Owns("turbo_drone2") ? 6f : Owns("turbo_drone1") ? 10f : baseLeadTime;
+
+    public static float DebtInterestRate => Owns("debt_restructure") ? 0.06f : 0.12f;
+
+    public static float TipMultiplierBonus => Owns("tip_terminal") ? 1.15f : 1f;
 }
