@@ -1,5 +1,6 @@
 ﻿using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public class HubUI : MonoBehaviour
@@ -24,6 +25,10 @@ public class HubUI : MonoBehaviour
     [SerializeField] Button notebookButton;
 
     [Header("Маркетплейс")]
+    [SerializeField] Button[] categoryTabButtons; // Порядок: Kitchen, Logistics, Finance, Cosmetic
+    [SerializeField] Color activeTabColor = new Color(0.6f, 0.6f, 0.6f, 1f);
+    [SerializeField] Color inactiveTabColor = Color.white;
+    [SerializeField] TMP_Text marketWalletText;   // Опційно: баланс всередині самого маркету
     [SerializeField] UpgradeRow rowPrefab;
     [SerializeField] Transform rowsParent;
     [SerializeField] Button marketBackButton;
@@ -43,6 +48,7 @@ public class HubUI : MonoBehaviour
     [SerializeField] OrderManager orders;
 
     bool _hintUsed = false;
+    int _currentMarketTab = 0;
 
     void Awake()
     {
@@ -61,6 +67,12 @@ public class HubUI : MonoBehaviour
         continueButton.onClick.AddListener(ContinueAfterResult);
         notebookButton.onClick.AddListener(() => PreferenceBookUI.Instance.Open());
 
+        for (int i = 0; i < categoryTabButtons.Length; i++)
+        {
+            int idx = i;
+            categoryTabButtons[i].onClick.AddListener(() => ShowMarketCategory(idx));
+        }
+
         HideAll();
     }
 
@@ -75,14 +87,29 @@ public class HubUI : MonoBehaviour
 
         if (PreferenceBookUI.ConsumedEscape) return;
 
-        if (GameFlow.Phase == GamePhase.Laptop && Input.GetKeyDown(KeyCode.Escape))
+        if (GameFlow.Phase == GamePhase.Laptop)
         {
-            if (marketPanel.activeSelf || callPanel.activeSelf) BackToMenu();
-            else CloseLaptop();
+            // Перемикання категорій маркету клавішами A / D без зациклення
+            if (marketPanel.activeSelf && categoryTabButtons.Length > 0)
+            {
+                if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
+                {
+                    if (_currentMarketTab > 0) ShowMarketCategory(_currentMarketTab - 1);
+                }
+                else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
+                {
+                    if (_currentMarketTab < categoryTabButtons.Length - 1) ShowMarketCategory(_currentMarketTab + 1);
+                }
+            }
+
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                if (marketPanel.activeSelf || callPanel.activeSelf) BackToMenu();
+                else CloseLaptop();
+            }
         }
     }
 
-    // Викликає Laptop, коли гравець натискає E на ноутбуку
     public void OpenLaptop()
     {
         _hintUsed = true;
@@ -103,6 +130,10 @@ public class HubUI : MonoBehaviour
         marketPanel.SetActive(false);
         callPanel.SetActive(false);
         laptopMenu.SetActive(true);
+
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(null);
+
         RefreshWallet();
     }
 
@@ -110,7 +141,7 @@ public class HubUI : MonoBehaviour
     {
         laptopMenu.SetActive(false);
         marketPanel.SetActive(true);
-        RefreshMarket();
+        ShowMarketCategory(0);
     }
 
     void OpenCall()
@@ -135,19 +166,13 @@ public class HubUI : MonoBehaviour
 
         int total = served + lost;
         int percent = total > 0 ? Mathf.RoundToInt(100f * served / total) : 0;
-        int revenue = GameSession.ShiftRevenue;
-        int expenses = GameSession.ShiftExpenses;
-        int net = revenue - expenses;
 
         resultText.text =
             "Зміну завершено\n\n" +
             $"Обслуговано: {served}\n" +
             $"Втрачено: {lost}\n" +
-            $"Ефективність: {percent}%\n\n" +
-            $"Виручка: {revenue}\n" +
-            $"Витрати: {expenses}\n" +
-            $"Чистий прибуток: {net}\n\n" +
-            $"Поточний борг: {GameSession.Debt}";
+            $"Ефективність: {percent}%\n" +
+            $"Заробіток: {credits} кредитів";
 
         resultPanel.SetActive(true);
         GameFlow.Set(GamePhase.Result);
@@ -157,7 +182,6 @@ public class HubUI : MonoBehaviour
     {
         HideAll();
 
-        // Прибираємо страву з рук, щоб у хабі нічого не лишалось
         ChefInteraction chef = FindFirstObjectByType<ChefInteraction>();
         if (chef != null) chef.Hand = null;
 
@@ -166,11 +190,25 @@ public class HubUI : MonoBehaviour
 
     void RefreshWallet()
     {
-        walletText.text = $"Кредити: {GameSession.Credits}\nБорг: {GameSession.Debt}";
+        string text = $"Кредити: {GameSession.Credits}\nБорг: {GameSession.Debt}";
+        if (walletText != null) walletText.text = text;
+        if (marketWalletText != null) marketWalletText.text = $"Кредити: {GameSession.Credits}";
     }
 
-    void RefreshMarket()
+    void ShowMarketCategory(int index)
     {
+        _currentMarketTab = index;
+
+        for (int i = 0; i < categoryTabButtons.Length; i++)
+        {
+            if (categoryTabButtons[i] == null) continue;
+
+            ColorBlock colors = categoryTabButtons[i].colors;
+            colors.normalColor = i == index ? activeTabColor : inactiveTabColor;
+            colors.selectedColor = colors.normalColor;
+            categoryTabButtons[i].colors = colors;
+        }
+
         foreach (Transform child in rowsParent) Destroy(child.gameObject);
 
         if (rowPrefab == null)
@@ -179,7 +217,8 @@ public class HubUI : MonoBehaviour
             return;
         }
 
-        foreach (Upgrade u in UpgradeCatalog.All)
+        UpgradeCategory category = (UpgradeCategory)index;
+        foreach (Upgrade u in UpgradeCatalog.InCategory(category))
         {
             UpgradeRow row = Instantiate(rowPrefab, rowsParent);
             row.Setup(u, () => BuyUpgrade(u));
@@ -193,7 +232,8 @@ public class HubUI : MonoBehaviour
         if (GameSession.TryBuy(u))
             Debug.Log($"[Market] куплено: {u.title}, залишилось кредитів: {GameSession.Credits}");
 
-        RefreshMarket();
+        // Перемальовуємо поточну вкладку, щоб не перекидало на першу
+        ShowMarketCategory(_currentMarketTab);
     }
 
     void RefreshCall()
