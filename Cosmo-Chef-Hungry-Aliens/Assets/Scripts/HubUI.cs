@@ -35,10 +35,16 @@ public class HubUI : MonoBehaviour
 
     [Header("Дзвінок")]
     [SerializeField] TMP_Text callText;
-    [SerializeField] string[] dialogue = { "Синку, коли вже віддаси борг?" };
     [SerializeField] Button payButton;
     [SerializeField] TMP_Text payButtonText;
     [SerializeField] Button callBackButton;
+
+    [Header("Дзвінок: діалоги")]
+    [SerializeField] ParentDialogueDirector parents;
+    [SerializeField] Button choiceAButton;
+    [SerializeField] TMP_Text choiceAText;
+    [SerializeField] Button choiceBButton;
+    [SerializeField] TMP_Text choiceBText;
 
     [Header("Результат")]
     [SerializeField] TMP_Text resultText;
@@ -148,7 +154,7 @@ public class HubUI : MonoBehaviour
     {
         laptopMenu.SetActive(false);
         callPanel.SetActive(true);
-        callText.text = dialogue[UnityEngine.Random.Range(0, dialogue.Length)];
+        ShowNode(parents.BeginCall());
         RefreshCall();
     }
 
@@ -241,13 +247,39 @@ public class HubUI : MonoBehaviour
         int payable = Mathf.Min(GameSession.Debt, GameSession.Credits);
         payButtonText.text = GameSession.Debt <= 0 ? "Борг сплачено" : $"Сплатити {payable}";
         payButton.interactable = payable > 0;
+        RefreshChoices();
     }
 
     void PayDebt()
     {
         int paid = GameSession.PayDebt(GameSession.Debt);
         Debug.Log($"[Call] сплачено {paid}, лишилось боргу: {GameSession.Debt}");
+
+        if (paid > 0) ShowNode(parents.AfterPayment(paid));
         RefreshCall();
+    }
+
+    void ShowNode(DialogueNode n) => callText.text = n != null ? n.Formatted : "";
+
+    void RefreshChoices()
+    {
+        var list = parents.GetChoices();
+        BindChoice(choiceAButton, choiceAText, list.Count > 0 ? list[0] : null);
+        BindChoice(choiceBButton, choiceBText, list.Count > 1 ? list[1] : null);
+    }
+
+    void BindChoice(Button button, TMP_Text label, DialogueChoice choice)
+    {
+        button.onClick.RemoveAllListeners();
+        button.gameObject.SetActive(choice != null);
+        if (choice == null) return;
+
+        label.text = choice.label;
+        button.onClick.AddListener(() =>
+        {
+            ShowNode(choice.Pick());
+            RefreshCall();   // оновлює і кнопку боргу (гроші змінились), і набір виборів
+        });
     }
 
     void HideAll()

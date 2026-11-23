@@ -15,6 +15,29 @@ public static class GameSession
 
     static readonly HashSet<string> owned = new HashSet<string>();
 
+    /// <summary>
+    /// Dialogue
+    /// </summary>
+    public static int ShiftsPlayed { get; private set; }
+    static readonly HashSet<string> seen = new HashSet<string>();
+
+    public static bool HasSeen(string id) => seen.Contains(id);
+    public static void MarkSeen(string id) => seen.Add(id);
+    public static void RegisterShiftPlayed() => ShiftsPlayed++;
+
+    // Безкоштовне видання предмета (не купівля)
+    public static void Grant(string id)
+    {
+        if (owned.Add(id)) OnBalanceChanged?.Invoke();
+    }
+
+    // Допомога батьків: гроші не вважаються виручкою зміни
+    public static void GrantCredits(int amount)
+    {
+        Credits += amount;
+        OnBalanceChanged?.Invoke();
+    }
+
     public static void ResetAll()
     {
         Credits = 0;
@@ -24,6 +47,9 @@ public static class GameSession
         int seed = Environment.TickCount;
         PreferenceBook.Generate(seed);
         Debug.Log($"[Preferences] згенеровано з seed {seed}");
+
+        ShiftsPlayed = 0;
+        seen.Clear();
 
         OnBalanceChanged?.Invoke();
     }

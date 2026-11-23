@@ -325,6 +325,8 @@ public class OrderManager : MonoBehaviour
         foreach (Station s in FindObjectsByType<Station>())
             s.ClearContents();
 
+        GameSession.RegisterShiftPlayed();
+
         Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, зароблено: {Credits}");
 
         if (HubUI.Instance != null)
