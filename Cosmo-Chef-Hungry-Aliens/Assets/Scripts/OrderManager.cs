@@ -23,7 +23,6 @@ public class OrderManager : MonoBehaviour
     int _interestDaysApplied;
     public static OrderManager Instance { get; private set; }
 
-
     [Header("Клієнти")]
     [SerializeField] Alien alienPrefab;
     [SerializeField] Transform spawnPoint;          // де з'являються, поза трейлером
@@ -84,8 +83,18 @@ public class OrderManager : MonoBehaviour
         _running = true;
         _interestDaysApplied = 0;
 
+        Served = 0;
+        Lost = 0;
+        Credits = 0;
+
         GameSession.BeginShiftAccounting();
         BuildTimerMilestones(duration);
+
+        foreach (Station s in FindObjectsByType<Station>(FindObjectsSortMode.None))
+            s.ClearContents();
+
+        ChefInteraction chefInteraction = FindFirstObjectByType<ChefInteraction>();
+        if (chefInteraction != null) chefInteraction.Hand = null;
     }
 
     void BuildTimerMilestones(float duration)
@@ -161,9 +170,6 @@ public class OrderManager : MonoBehaviour
     void SpawnOrder()
     {
         SpeciesDefinition species = PreferenceBook.Species[Random.Range(0, PreferenceBook.Species.Length)];
-        Served = 0;
-        Lost = 0;
-        Credits = 0;
 
         var order = new Order
         {

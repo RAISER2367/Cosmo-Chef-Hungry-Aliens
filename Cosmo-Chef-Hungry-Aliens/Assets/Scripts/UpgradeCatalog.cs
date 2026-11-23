@@ -47,10 +47,10 @@ public static class UpgradeCatalog
         // Косметика
         new Upgrade("cosm_plant", "Кімнатна рослина", "Трохи затишку в кабіні", 40, UpgradeCategory.Cosmetic),
         new Upgrade("cosm_neon", "Неонова вивіска", "Світиться у вікні", 60, UpgradeCategory.Cosmetic),
-        new Upgrade("cosm_rug", "Килимок біля плити", "", 30, UpgradeCategory.Cosmetic),
-        new Upgrade("cosm_led", "LED-підсвітка кабіни", "", 70, UpgradeCategory.Cosmetic),
+        new Upgrade("cosm_rug", "Килимок біля плити", "М'яке покриття під ногами", 30, UpgradeCategory.Cosmetic),
+        new Upgrade("cosm_led", "LED-підсвітка кабіни", "Неонове освітлення робочої зони", 70, UpgradeCategory.Cosmetic),
         new Upgrade("cosm_music", "Космічний програвач", "Фонова музика", 50, UpgradeCategory.Cosmetic),
-        new Upgrade("cosm_shelf", "Декоративні полиці", "", 45, UpgradeCategory.Cosmetic),
+        new Upgrade("cosm_shelf", "Декоративні полиці", "Стильні полиці в салоні", 45, UpgradeCategory.Cosmetic),
     };
 
     public static IEnumerable<Upgrade> InCategory(UpgradeCategory c)

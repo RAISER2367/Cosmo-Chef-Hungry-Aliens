@@ -1,43 +1,41 @@
-﻿using TMPro;
+﻿using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class UpgradeRow : MonoBehaviour
 {
-    [SerializeField] TMP_Text title;
-    [SerializeField] TMP_Text description;
-    [SerializeField] Button button;
+    [SerializeField] TMP_Text titleText;
+    [SerializeField] TMP_Text descriptionText;
+    [SerializeField] Button buyButton;
     [SerializeField] TMP_Text buttonText;
 
-    public void Setup(Upgrade u, System.Action onBuy)
+    public void Setup(Upgrade u, Action onBuy)
     {
-        title.text = u.title;
-        description.text = u.description;
-        button.onClick.RemoveAllListeners();
+        titleText.text = u.title;
+        descriptionText.text = u.description;
 
-        if (GameSession.Owns(u.id))
+        bool owned = GameSession.Owns(u.id);
+        bool unlocked = u.Unlocked;
+        bool canAfford = GameSession.Credits >= u.price;
+
+        if (owned)
         {
             buttonText.text = "Куплено";
-            button.interactable = false;
-            return;
+            buyButton.interactable = false;
         }
-
-        if (!u.Unlocked)
+        else if (!unlocked)
         {
-            buttonText.text = "Спочатку попереднє";
-            button.interactable = false;
-            return;
+            buttonText.text = "Закрито";
+            buyButton.interactable = false;
         }
-
-        if (GameSession.Credits < u.price)
+        else
         {
-            buttonText.text = $"Бракує {u.price - GameSession.Credits}";
-            button.interactable = false;
-            return;
+            buttonText.text = $"{u.price}";
+            buyButton.interactable = canAfford;
         }
 
-        buttonText.text = $"Купити · {u.price}";
-        button.interactable = true;
-        button.onClick.AddListener(() => onBuy());
+        buyButton.onClick.RemoveAllListeners();
+        buyButton.onClick.AddListener(() => onBuy?.Invoke());
     }
 }
