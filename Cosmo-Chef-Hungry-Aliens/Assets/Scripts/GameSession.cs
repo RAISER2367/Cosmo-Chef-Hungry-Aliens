@@ -40,7 +40,7 @@ public static class GameSession
 
     public static void ResetAll()
     {
-        Credits = 0;
+        Credits = 1000;
         Debt = 300;
         owned.Clear();
 
@@ -137,4 +137,14 @@ public static class GameSession
     public static float DebtInterestRate => Owns("debt_restructure") ? 0.06f : 0.12f;
 
     public static float TipMultiplierBonus => Owns("tip_terminal") ? 1.15f : 1f;
+
+    // Лазерний ніж: 2 натискання замість 3 для нарізання
+    public static int CutPresses => Owns("laser_knife") ? 2 : 3;
+
+    // Індукційний контур: вікно до Burnt 9с → 12с
+    public static float BurnTime => Owns("induction_coil") ? 12f : 9f;
+
+    // Магнітні фіксатори: зменшують знос і тряску камери під час турбулентності
+    public static float TurbulenceResistance => Owns("magnetic_clamps") ? 0.3f : 1f;
+
 }

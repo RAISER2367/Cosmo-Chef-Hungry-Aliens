@@ -174,6 +174,8 @@ public class Feedback : MonoBehaviour
         cross.transform.SetParent(cgo.transform, false);
         _crossRect = cross.GetComponent<RectTransform>();
         _crossRect.anchorMin = _crossRect.anchorMax = new Vector2(0.5f, 0.5f);
+        _crossRect.pivot = new Vector2(0.5f, 0.5f);
+        _crossRect.anchoredPosition = Vector2.zero;
         _crossRect.sizeDelta = new Vector2(6f, 6f);
         _crossImg = cross.AddComponent<Image>();
         _crossImg.raycastTarget = false;
@@ -297,7 +299,7 @@ public class Feedback : MonoBehaviour
             _handText.text = hand.Length == 0 ? "" : "У руках: " + hand;
         }
 
-        _crossImg.enabled = show;
+        _crossImg.enabled = false;
         bool has = show && prompt.Length > 0;
         _crossImg.color = has
             ? (_promptOk ? new Color(1f, 0.9f, 0.35f, 1f) : new Color(1f, 0.5f, 0.45f, 1f))
