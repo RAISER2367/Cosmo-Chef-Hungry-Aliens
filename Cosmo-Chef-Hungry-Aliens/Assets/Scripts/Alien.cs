@@ -17,6 +17,11 @@ public class Alien : MonoBehaviour
     [SerializeField] Renderer body;
     [SerializeField] TMP_Text orderText;
 
+    [Header("Фідбек")]
+    [SerializeField] float popTime = 0.35f;       // поява: «вистрибує» з нуля
+    [SerializeField] float reactTime = 0.5f;      // підстрибування і колір при реакції
+    [SerializeField] float urgentBelow = 0.25f;   // частка терпіння, нижче якої текст пульсує
+
     Transform _chef;
     Transform _cam;
     Vector3 _spot;        // місце в черзі
@@ -29,22 +34,24 @@ public class Alien : MonoBehaviour
     bool _leaving;
 
     string _speciesId;
+    string _orderString = "";
 
-    // звичайний спавн прибульців
+    Vector3 _baseScale = Vector3.one;
+    Vector3 _textBaseScale = Vector3.one;
+    float _age;
+    float _phase;
+    float _reactT;
+    float _textRestoreT;
+    bool _moving;
+    bool _urgent;
+    Color _flashColor = Color.white;
 
-    //public void Init(Order order, Transform chef, SpeciesDefinition species)
-    //{
-    //    _chef = chef;
-    //    _cam = Camera.main != null ? Camera.main.transform : null;
-    //    _speciesId = species.id;
-
-    //    moveSpeed = species.moveSpeed; // перейменуйте поле на не-readonly, якщо було serialized const
-
-    //    if (orderText != null) orderText.text = string.Join("\n", order.required);
-
-    //    _spot = _goal = transform.position;
-    //    _wander = PickWander();
-    //}
+    void Awake()
+    {
+        _baseScale = transform.localScale;
+        if (orderText != null) _textBaseScale = orderText.transform.localScale;
+        _phase = Random.value * 6.28f;
+    }
 
     public void Init(Order order, Transform chef, SpeciesDefinition species)
     {
@@ -54,26 +61,20 @@ public class Alien : MonoBehaviour
 
         moveSpeed = species.moveSpeed;
 
-        // Візуальна різниця за силуетом капсули
-        //transform.localScale = species.id switch
-        //{
-        //    "vip" => new Vector3(0.85f, 1.3f, 0.85f),  // високий і стрункий
-        //    "grump" => new Vector3(1.25f, 0.8f, 1.25f),  // низький і кремезний
-        //    _ => Vector3.one                       // стандартний новачок
-        //};
-
         if (orderText != null)
         {
             string badgeColor = species.id switch
             {
-                "vip" => "#FFD700", // золотий
+                "vip" => "#FFD700",   // золотий
                 "grump" => "#FF7043", // коралово-червоний
-                _ => "#4FC3F7"  // блакитний
+                _ => "#4FC3F7"        // блакитний
             };
 
-            orderText.text =
+            _orderString =
                 $"<color={badgeColor}><b>[{species.displayName.ToUpper()}]</b></color>\n" +
                 string.Join("\n", order.required);
+
+            orderText.text = _orderString;
         }
 
         _spot = _goal = transform.position;
@@ -90,17 +91,65 @@ public class Alien : MonoBehaviour
 
     public void SetPatience(float fraction)
     {
+        _urgent = fraction < urgentBelow;
+
+        // Під час реакції колір задає реакція, а не терпіння
+        if (_reactT > 0f) return;
         if (body != null) body.material.color = Color.Lerp(Color.red, Color.green, fraction);
     }
 
-    public void Leave(Vector3 exit, bool satisfied)
+    /// <summary>Видима реакція клієнта: підстрибує, спалахує кольором, показує репліку.</summary>
+    public void React(string line, Color color, float showSeconds = 2f)
+    {
+        _flashColor = color;
+        _reactT = reactTime;
+
+        if (orderText != null)
+        {
+            orderText.text = $"<color=#{ColorUtility.ToHtmlStringRGB(color)}><b>{line}</b></color>";
+            _textRestoreT = showSeconds;
+        }
+    }
+
+    public void Leave(Vector3 exit, bool satisfied, string line = null)
     {
         _leaving = true;
         _exit = exit;
-        if (orderText != null) orderText.text = satisfied ? "дякую!" : "...";
+        _urgent = false;
+        _textRestoreT = 0f;
+
+        // Піде з кольором, що показує настрій
+        _flashColor = satisfied ? new Color(0.45f, 0.95f, 0.5f) : new Color(0.95f, 0.4f, 0.35f);
+        _reactT = reactTime;
+
+        if (orderText != null)
+            orderText.text = line ?? (satisfied ? "дякую!" : "...");
     }
 
     void Update()
+    {
+        float dt = Time.deltaTime;
+        _age += dt;
+        _moving = false;
+
+        if (_reactT > 0f)
+        {
+            _reactT -= dt;
+            if (body != null) body.material.color = _flashColor;
+        }
+
+        if (_textRestoreT > 0f)
+        {
+            _textRestoreT -= dt;
+            if (_textRestoreT <= 0f && orderText != null && !_leaving)
+                orderText.text = _orderString;
+        }
+
+        Move();
+        ApplyScale();
+    }
+
+    void Move()
     {
         if (_leaving)
         {
@@ -138,6 +187,43 @@ public class Alien : MonoBehaviour
         TurnFlat(_goal);
     }
 
+    // Поява (пружинить), підстрибування при реакції, похитування під час ходьби
+    void ApplyScale()
+    {
+        float pop = _age < popTime ? EaseOutBack(_age / popTime) : 1f;
+
+        float punch = 1f;
+        if (_reactT > 0f)
+        {
+            float u = 1f - Mathf.Clamp01(_reactT / reactTime);
+            punch = 1f + 0.22f * Mathf.Sin(u * Mathf.PI);
+        }
+
+        float bob = _moving ? Mathf.Sin(Time.time * 12f + _phase) * 0.04f : 0f;
+
+        float k = pop * punch;
+        transform.localScale = new Vector3(
+            _baseScale.x * k * (1f - bob * 0.5f),
+            _baseScale.y * k * (1f + bob),
+            _baseScale.z * k * (1f - bob * 0.5f));
+
+        // Нетерплячий клієнт: текст пульсує
+        if (orderText != null)
+        {
+            float pulse = _urgent ? 1f + 0.12f * Mathf.Sin(Time.time * 9f) : 1f;
+            orderText.transform.localScale = _textBaseScale * pulse;
+        }
+    }
+
+    static float EaseOutBack(float x)
+    {
+        x = Mathf.Clamp01(x);
+        const float c1 = 1.70158f;
+        const float c3 = c1 + 1f;
+        float p = x - 1f;
+        return 1f + c3 * p * p * p + c1 * p * p;
+    }
+
     void LateUpdate()
     {
         // Текст завжди дивиться на камеру, незалежно від повороту клієнта
@@ -157,8 +243,11 @@ public class Alien : MonoBehaviour
 
     void Walk(Vector3 target, float speed)
     {
-        transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
+        Vector3 before = transform.position;
+        transform.position = Vector3.MoveTowards(before, target, speed * Time.deltaTime);
         _goal = target;
+
+        if ((transform.position - before).sqrMagnitude > 1e-8f) _moving = true;
     }
 
     void TurnFlat(Vector3 point)

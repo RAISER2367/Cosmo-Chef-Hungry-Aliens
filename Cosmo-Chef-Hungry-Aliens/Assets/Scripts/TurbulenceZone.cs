@@ -65,11 +65,14 @@ public class TurbulenceZone : MonoBehaviour
             0f,
             Mathf.PerlinNoise(_seed.z, t) * 2f - 1f);
 
+        // Магнітні фіксатори зменшують і знос, і тряску
+        float resistance = GameSession.TurbulenceResistance;
+
         // CharacterController сам зупиняє знос об стіни й ящики
-        _cc.Move(dir.normalized * d.CurrentStrength * Time.deltaTime);
+        _cc.Move(dir.normalized * d.CurrentStrength * resistance * Time.deltaTime);
 
         if (cameraTransform != null)
-            cameraTransform.localPosition = _cameraBase + Random.insideUnitSphere * shakeAmount * d.Shake;
+            cameraTransform.localPosition = _cameraBase + Random.insideUnitSphere * shakeAmount * d.Shake * resistance;
     }
 
     bool Contains(Vector3 world)

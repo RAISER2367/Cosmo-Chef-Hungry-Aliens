@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class ChefInteraction : MonoBehaviour
@@ -15,16 +16,24 @@ public class ChefInteraction : MonoBehaviour
     [SerializeField] FoodVisual[] heldDishSlots;
 
     FoodItem _hand;
-    Station _target;
-    string _lastHit = "нічого";
+
+    readonly RaycastHit[] _hits = new RaycastHit[24];
 
     public int TargetSlot { get; private set; } = -1;
 
     public FoodItem Hand
     {
         get => _hand;
-        set => _hand = value;
+        set
+        {
+            if (ReferenceEquals(_hand, value)) return;
+            _hand = value;
+            Feedback.Sfx(value != null ? "pick" : "drop", 0.8f);
+        }
     }
+
+    // Тихе скидання (початок зміни, повернення в хаб): без звуку «поклав»
+    public void ResetHand() => _hand = null;
 
     void Awake()
     {
@@ -35,47 +44,92 @@ public class ChefInteraction : MonoBehaviour
     {
         UpdateHeldVisuals();
 
-        if (!GameFlow.CanInteract) return;
+        if (!GameFlow.CanInteract)
+        {
+            Feedback.SetPrompt("");
+            Feedback.SetHand("");
+            return;
+        }
+
+        // Щокадрове наведення: підказка з'являється ще до натискання
+        Station station;
+        Laptop laptop;
+        Aim(out station, out laptop);
+
+        string prompt = "";
+        bool actionable = true;
+
+        if (GameFlow.Phase == GamePhase.Hub)
+        {
+            if (laptop != null) prompt = "Відкрити ноутбук";
+        }
+        else if (GameFlow.Phase == GamePhase.Shift && station != null)
+        {
+            prompt = station.GetPrompt(this, out actionable);
+        }
+
+        Feedback.SetPrompt(prompt, actionable);
+        Feedback.SetHand(_hand != null ? Labels.Item(_hand) : "");
 
         bool pressed = Input.GetKeyDown(KeyCode.E) || Input.GetMouseButtonDown(0);
         if (!pressed) return;
 
+        // Клік по кнопці UI, що щойно змінила фазу, не має стати дією у світі
+        if (GameFlow.JustChanged) return;
+
         // У хабі E працює тільки на ноутбуку
         if (GameFlow.Phase == GamePhase.Hub)
         {
-            Laptop laptop = FindLaptop();
-            if (laptop != null) laptop.Use();
+            if (laptop != null)
+            {
+                Feedback.Sfx("click");
+                laptop.Use();
+            }
             else Debug.Log("[Hub] дивіться на ноутбук");
             return;
         }
 
         // Зміна: звичайна логіка станцій
-        _target = FindTargetStation();
-        Debug.Log($"Натиск. Промінь влучив у: {_lastHit}");
-
-        if (_target == null)
+        if (station == null)
         {
             Debug.Log("Дивіться на станцію");
             return;
         }
 
-        _target.Interact(this);
+        station.Interact(this);
     }
 
-    Laptop FindLaptop()
+    // Один SphereCast на кадр без виділення пам'яті. Перше влучання (крім самого шефа) вирішує все.
+    void Aim(out Station station, out Laptop laptop)
     {
+        station = null;
+        laptop = null;
+        TargetSlot = -1;
+
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
-        RaycastHit[] hits = Physics.SphereCastAll(
-            ray, aimRadius, interactDistance, interactMask, QueryTriggerInteraction.Ignore);
+        int n = Physics.SphereCastNonAlloc(
+            ray, aimRadius, _hits, interactDistance, interactMask, QueryTriggerInteraction.Ignore);
 
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        System.Array.Sort(_hits, 0, n, HitDistanceComparer.Instance);
 
-        foreach (var h in hits)
+        for (int i = 0; i < n; i++)
         {
-            if (h.collider.GetComponentInParent<ChefInteraction>() == this) continue;
-            return h.collider.GetComponentInParent<Laptop>();
+            Collider c = _hits[i].collider;
+            if (c.GetComponentInParent<ChefInteraction>() == this) continue;
+
+            laptop = c.GetComponentInParent<Laptop>();
+
+            StationSlot slot = c.GetComponent<StationSlot>();
+            if (slot != null)
+            {
+                TargetSlot = slot.index;
+                station = slot.station;
+                return;
+            }
+
+            station = c.GetComponentInParent<Station>();
+            return;
         }
-        return null;
     }
 
     void UpdateHeldVisuals()
@@ -96,33 +150,9 @@ public class ChefInteraction : MonoBehaviour
         }
     }
 
-    Station FindTargetStation()
+    class HitDistanceComparer : IComparer<RaycastHit>
     {
-        TargetSlot = -1;
-
-        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
-        RaycastHit[] hits = Physics.SphereCastAll(
-            ray, aimRadius, interactDistance, interactMask, QueryTriggerInteraction.Ignore);
-
-        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-
-        foreach (var h in hits)
-        {
-            if (h.collider.GetComponentInParent<ChefInteraction>() == this) continue;
-
-            _lastHit = h.collider.name;
-
-            StationSlot slot = h.collider.GetComponent<StationSlot>();
-            if (slot != null)
-            {
-                TargetSlot = slot.index;
-                return slot.station;
-            }
-
-            return h.collider.GetComponentInParent<Station>();
-        }
-
-        _lastHit = "нічого";
-        return null;
+        public static readonly HitDistanceComparer Instance = new HitDistanceComparer();
+        public int Compare(RaycastHit a, RaycastHit b) => a.distance.CompareTo(b.distance);
     }
 }

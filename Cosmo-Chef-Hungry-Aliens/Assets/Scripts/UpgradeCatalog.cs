@@ -34,11 +34,11 @@ public static class UpgradeCatalog
         // Склад і логістика
         new Upgrade("fridge_cap1", "Більший холодильник I", "+10 до місткості", 120, UpgradeCategory.Logistics),
         new Upgrade("fridge_cap2", "Більший холодильник II", "Ще +10 до місткості", 220, UpgradeCategory.Logistics, "fridge_cap1"),
-        new Upgrade("turbo_drone1", "Турбо-дрони I", "Доставка 15с → 10с", 160, UpgradeCategory.Logistics),
-        new Upgrade("turbo_drone2", "Турбо-дрони II", "Доставка 10с → 6с", 260, UpgradeCategory.Logistics, "turbo_drone1"),
-        new Upgrade("autobuy1", "Автологістика I", "Замовляє при запасі < 12%", 150, UpgradeCategory.Logistics),
-        new Upgrade("autobuy2", "Автологістика II", "Замовляє при запасі < 50%", 260, UpgradeCategory.Logistics, "autobuy1"),
-        new Upgrade("magnetic_clamps", "Магнітні фіксатори", "Захист столів від турбулентності", 180, UpgradeCategory.Logistics),
+        new Upgrade("turbo_drone1", "Турбо-дрони I", "Дрони летять на 33% швидше", 160, UpgradeCategory.Logistics),
+        new Upgrade("turbo_drone2", "Турбо-дрони II", "Дрони летять на 60% швидше", 260, UpgradeCategory.Logistics, "turbo_drone1"),
+        new Upgrade("autobuy1", "Автологістика I", "Дрон сам замовляє, коли запас < 12%", 150, UpgradeCategory.Logistics),
+        new Upgrade("autobuy2", "Автологістика II", "Дрон сам замовляє, коли запас < 50%", 260, UpgradeCategory.Logistics, "autobuy1"),
+        new Upgrade("magnetic_clamps", "Магнітні фіксатори", "Знос і тряска в турбулентності −60%", 180, UpgradeCategory.Logistics),
 
         // Фінанси
         new Upgrade("debt_restructure", "Реструктуризація боргу", "Відсоток на борг: 12% → 6%", 300, UpgradeCategory.Finance),
@@ -47,10 +47,10 @@ public static class UpgradeCatalog
         // Косметика
         new Upgrade("cosm_plant", "Кімнатна рослина", "Трохи затишку в кабіні", 40, UpgradeCategory.Cosmetic),
         new Upgrade("cosm_neon", "Неонова вивіска", "Світиться у вікні", 60, UpgradeCategory.Cosmetic),
-        new Upgrade("cosm_rug", "Килимок біля плити", "", 30, UpgradeCategory.Cosmetic),
-        new Upgrade("cosm_led", "LED-підсвітка кабіни", "", 70, UpgradeCategory.Cosmetic),
+        new Upgrade("cosm_rug", "Килимок біля плити", "М'яке покриття під ногами", 30, UpgradeCategory.Cosmetic),
+        new Upgrade("cosm_led", "LED-підсвітка кабіни", "Неонове освітлення робочої зони", 70, UpgradeCategory.Cosmetic),
         new Upgrade("cosm_music", "Космічний програвач", "Фонова музика", 50, UpgradeCategory.Cosmetic),
-        new Upgrade("cosm_shelf", "Декоративні полиці", "", 45, UpgradeCategory.Cosmetic),
+        new Upgrade("cosm_shelf", "Декоративні полиці", "Стильні полиці в салоні", 45, UpgradeCategory.Cosmetic),
     };
 
     public static IEnumerable<Upgrade> InCategory(UpgradeCategory c)

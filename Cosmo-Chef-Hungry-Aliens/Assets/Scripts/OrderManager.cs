@@ -9,6 +9,7 @@ public class Order
     public int reward;
     public Alien alien;
     public string speciesId;
+    public bool warned;   // чи вже пролунало попередження про закінчення терпіння
 
     public override string ToString() => $"[{speciesId}: {string.Join(", ", required)}]";
 }
@@ -18,18 +19,15 @@ public class OrderManager : MonoBehaviour
     [Header("Економіка")]
     [SerializeField] float markupMultiplier = 3.5f; // нагорода = собівартість інгредієнтів * це число
 
-    [Header("Борг")]
-    [SerializeField] float dailyInterestRate = 0.05f; // 5% на день для Standard/Marathon
     int _interestDaysApplied;
     public static OrderManager Instance { get; private set; }
-
 
     [Header("Клієнти")]
     [SerializeField] Alien alienPrefab;
     [SerializeField] Transform spawnPoint;          // де з'являються, поза трейлером
     [SerializeField] Transform exitPoint;           // куди ідуть після обслуговування
     [SerializeField] Transform[] queueSpots;        // 0 = найближче до вікна
-    [SerializeField] float spawnInterval = 12f;
+    [SerializeField] float firstClientDelay = 3f;   // пауза перед першим клієнтом, щоб гравець встиг озирнутись
     [SerializeField] float patienceSeconds = 40f;
 
     [Header("Замовлення")]
@@ -50,10 +48,24 @@ public class OrderManager : MonoBehaviour
     public int Lost { get; private set; }
     public int Credits { get; private set; }
 
+    // Для EventDirector та інших систем
+    public float ShiftLeft => _shiftLeft;
+    public bool Running => _running;
+
     [Header("Хвиля спавну")]
     [SerializeField] float baseInterval = 14f;
     [SerializeField] float peakInterval = 6f;
     [SerializeField] AnimationCurve wave = AnimationCurve.EaseInOut(0, 0, 1, 1); // підняти пік у редакторі ~0.5
+
+    [Header("Реакції клієнтів")]
+    [SerializeField] float happyFactor = 1.2f;      // payFactor від цього значення = «Смакота!»
+    [SerializeField] float okFactor = 0.95f;        // нижче цього = «Таке собі…»
+
+    static readonly Color Gold = new Color(1f, 0.85f, 0.3f);
+    static readonly Color Green = new Color(0.5f, 1f, 0.55f);
+    static readonly Color Cyan = new Color(0.45f, 0.85f, 1f);
+    static readonly Color Orange = new Color(1f, 0.65f, 0.3f);
+    static readonly Color Red = new Color(1f, 0.4f, 0.35f);
 
     float CurrentSpawnInterval()
     {
@@ -80,12 +92,25 @@ public class OrderManager : MonoBehaviour
         float duration = ShiftSettings.Duration;
 
         _shiftLeft = duration;
-        _spawnTimer = 0f;
+        _spawnTimer = firstClientDelay;
         _running = true;
         _interestDaysApplied = 0;
 
+        Served = 0;
+        Lost = 0;
+        Credits = 0;
+
         GameSession.BeginShiftAccounting();
         BuildTimerMilestones(duration);
+
+        foreach (Station s in FindObjectsByType<Station>(FindObjectsSortMode.None))
+            s.ClearContents();
+
+        ChefInteraction chefInteraction = FindFirstObjectByType<ChefInteraction>();
+        if (chefInteraction != null) chefInteraction.ResetHand();
+
+        Feedback.Sfx("start");
+        Feedback.Good("Зміна почалась!");
     }
 
     void BuildTimerMilestones(float duration)
@@ -110,17 +135,17 @@ public class OrderManager : MonoBehaviour
 
     void Update()
     {
-
         if (!_running) return;
 
         _shiftLeft -= Time.deltaTime;
         float elapsed = ShiftSettings.Duration - _shiftLeft;
         int dayIndex = Mathf.FloorToInt(elapsed / ShiftSettings.SecondsPerDay);
 
+        // Відсоток тепер береться з GameSession: 12%, а після реструктуризації 6%
         while (_interestDaysApplied < dayIndex && _interestDaysApplied < ShiftSettings.Days)
         {
             _interestDaysApplied++;
-            if (ShiftSettings.Days > 1) GameSession.ApplyDailyInterest(dailyInterestRate);
+            if (ShiftSettings.Days > 1) GameSession.ApplyDailyInterest(GameSession.DebtInterestRate);
         }
 
         // Дебаг-таймер: while, щоб не пропустити кілька позначок за один кадр
@@ -131,6 +156,13 @@ public class OrderManager : MonoBehaviour
                 Debug.Log($"[Таймер] Залишилося: {mark / 60f} хв");
             else
                 Debug.Log($"[Таймер] Залишилося: {mark} сек!");
+
+            // Те, що було лише в консолі, тепер бачить гравець
+            if (mark <= 30f)
+            {
+                Feedback.Toast($"До кінця зміни {mark:0} с", Orange);
+                Feedback.Sfx("warn", 0.6f);
+            }
         }
 
         if (_shiftLeft <= 0f)
@@ -138,7 +170,6 @@ public class OrderManager : MonoBehaviour
             EndShift();
             return;
         }
-
 
         _spawnTimer -= Time.deltaTime;
         if (_spawnTimer <= 0f && _queue.Count < queueSpots.Length)
@@ -152,7 +183,15 @@ public class OrderManager : MonoBehaviour
         {
             Order o = _queue[i];
             o.patience -= Time.deltaTime;
-            o.alien.SetPatience(o.patience / o.maxPatience);
+
+            float fraction = o.patience / o.maxPatience;
+            o.alien.SetPatience(fraction);
+
+            if (!o.warned && fraction < 0.25f && o.patience > 0f)
+            {
+                o.warned = true;
+                Feedback.Sfx("warn", 0.5f);
+            }
 
             if (o.patience <= 0f) FailOrder(i);
         }
@@ -161,9 +200,6 @@ public class OrderManager : MonoBehaviour
     void SpawnOrder()
     {
         SpeciesDefinition species = PreferenceBook.Species[Random.Range(0, PreferenceBook.Species.Length)];
-        Served = 0;
-        Lost = 0;
-        Credits = 0;
 
         var order = new Order
         {
@@ -182,6 +218,8 @@ public class OrderManager : MonoBehaviour
 
         _queue.Add(order);
         AssignQueueSpots();
+
+        Feedback.Sfx("bell", 0.5f);
         Debug.Log($"[Orders] {species.displayName} хоче {order}");
     }
 
@@ -215,39 +253,6 @@ public class OrderManager : MonoBehaviour
         }
     }
 
-    //public bool TrySubmit(Dish dish)
-    //{
-    //    if (!_running) return false;
-
-    //    for (int i = 0; i < _queue.Count; i++)
-    //    {
-    //        Order o = _queue[i];
-    //        if (!SameIngredients(o.required, dish)) continue;
-
-    //        var (ok, multiplier, reaction) = EvaluatePreferences(o.speciesId, dish);
-    //        if (!ok)
-    //        {
-    //            Debug.Log($"[Orders] {o.alien.name} відмовився: {reaction}");
-    //            continue; // пробуємо наступне замовлення в черзі
-    //        }
-
-    //        int finalReward = Mathf.RoundToInt(o.reward * multiplier);
-
-    //        Served++;
-    //        Credits += finalReward;
-    //        GameSession.AddCredits(finalReward);
-    //        o.alien.Leave(exitPoint.position, true);
-    //        _queue.RemoveAt(i);
-    //        AssignQueueSpots();
-
-    //        Debug.Log($"[Orders] видано {dish} для {o}, {reaction}, +{finalReward}");
-    //        return true;
-    //    }
-
-    //    Debug.Log($"[Orders] {dish} не відповідає жодному замовленню в черзі");
-    //    return false;
-    //}
-
     public bool TrySubmit(Dish dish)
     {
         if (!_running) return false;
@@ -255,6 +260,7 @@ public class OrderManager : MonoBehaviour
         if (_queue.Count == 0)
         {
             Debug.Log("[Orders] черга порожня, нікому видавати");
+            Feedback.Warn("Черга порожня, нікому видавати");
             return false;
         }
 
@@ -263,6 +269,8 @@ public class OrderManager : MonoBehaviour
         if (!SameIngredients(first.required, dish))
         {
             Debug.Log($"[Orders] {dish} не відповідає замовленню першого клієнта {first}");
+            Feedback.Warn("Склад страви не збігається із замовленням");
+            first.alien.React("Це не те, що я просив!", Orange, 2f);
             return false;
         }
 
@@ -272,6 +280,9 @@ public class OrderManager : MonoBehaviour
         if (result.refused)
         {
             Debug.Log($"[Orders] перший клієнт ({first.speciesId}) відмовився: {result.reason}");
+            Feedback.Sfx("angry");
+            Feedback.Toast($"Клієнт відмовився: {result.reason}", Red);
+            first.alien.React("Фу! Це я їсти не буду!", Red, 2.5f);
             return false;
         }
 
@@ -281,7 +292,19 @@ public class OrderManager : MonoBehaviour
         Served++;
         Credits += finalReward;
         GameSession.AddCredits(finalReward);
-        first.alien.Leave(exitPoint.position, true);
+
+        // Реакція за тим, наскільки страва сподобалась
+        string line;
+        Color col;
+        if (result.payFactor >= happyFactor) { line = "Смакота!"; col = Green; Feedback.Sfx("happy"); }
+        else if (result.payFactor >= okFactor) { line = "Дякую!"; col = Cyan; }
+        else { line = "Таке собі…"; col = Orange; }
+
+        Feedback.Sfx("coin");
+        Feedback.FloatText(first.alien.transform.position + Vector3.up * 2f, $"+{finalReward}", Gold, 3f);
+
+        first.alien.Leave(exitPoint.position, true,
+            $"<color=#{ColorUtility.ToHtmlStringRGB(col)}><b>{line}</b></color>");
         _queue.RemoveAt(0);
         AssignQueueSpots();
 
@@ -300,13 +323,22 @@ public class OrderManager : MonoBehaviour
 
         return need.Count == 0;
     }
+
     void FailOrder(int index)
     {
         Order o = _queue[index];
         Lost++;
-        o.alien.Leave(exitPoint.position, false);
+        o.alien.Leave(exitPoint.position, false,
+            $"<color=#{ColorUtility.ToHtmlStringRGB(Red)}><b>Йду голодний!</b></color>");
         _queue.RemoveAt(index);
         AssignQueueSpots();
+
+        if (_running)
+        {
+            Feedback.Sfx("lost");
+            Feedback.Toast("Клієнт пішов без їжі", Red);
+        }
+
         Debug.Log($"[Orders] клієнт пішов без їжі: {o}. Втрачено клієнтів: {Lost}");
     }
 
@@ -316,8 +348,10 @@ public class OrderManager : MonoBehaviour
 
         for (int i = _queue.Count - 1; i >= 0; i--) FailOrder(i);
 
-        foreach (Station s in FindObjectsByType<Station>())
+        foreach (Station s in FindObjectsByType<Station>(FindObjectsSortMode.None))
             s.ClearContents();
+
+        GameSession.RegisterShiftPlayed();
 
         Debug.Log($"[Shift] зміну завершено. Обслужено: {Served}, втрачено: {Lost}, зароблено: {Credits}");
 

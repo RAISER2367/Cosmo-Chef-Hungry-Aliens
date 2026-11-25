@@ -1,43 +1,49 @@
-﻿using TMPro;
+﻿using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class UpgradeRow : MonoBehaviour
 {
-    [SerializeField] TMP_Text title;
-    [SerializeField] TMP_Text description;
-    [SerializeField] Button button;
+    [SerializeField] TMP_Text titleText;
+    [SerializeField] TMP_Text descriptionText;
+    [SerializeField] Button buyButton;
     [SerializeField] TMP_Text buttonText;
 
-    public void Setup(Upgrade u, System.Action onBuy)
-    {
-        title.text = u.title;
-        description.text = u.description;
-        button.onClick.RemoveAllListeners();
+    static readonly Color AffordColor = Color.white;
+    static readonly Color TooPoorColor = new Color(1f, 0.45f, 0.4f);
 
-        if (GameSession.Owns(u.id))
+    public void Setup(Upgrade u, Action onBuy)
+    {
+        titleText.text = u.title;
+        descriptionText.text = u.description;
+
+        bool owned = GameSession.Owns(u.id);
+        bool unlocked = u.Unlocked;
+        bool canAfford = GameSession.Credits >= u.price;
+
+        buttonText.color = AffordColor;
+
+        if (owned)
         {
             buttonText.text = "Куплено";
-            button.interactable = false;
-            return;
+            buyButton.interactable = false;
         }
-
-        if (!u.Unlocked)
+        else if (!unlocked)
         {
-            buttonText.text = "Спочатку попереднє";
-            button.interactable = false;
-            return;
+            buttonText.text = "Закрито";
+            buyButton.interactable = false;
         }
-
-        if (GameSession.Credits < u.price)
+        else
         {
-            buttonText.text = $"Бракує {u.price - GameSession.Credits}";
-            button.interactable = false;
-            return;
+            // Кнопка лишається активною навіть без грошей: натискання дає пояснення («Не вистачає N кредитів»),
+            // а червона ціна показує, що зараз не по кишені
+            buttonText.text = $"{u.price}";
+            buttonText.color = canAfford ? AffordColor : TooPoorColor;
+            buyButton.interactable = true;
         }
 
-        buttonText.text = $"Купити · {u.price}";
-        button.interactable = true;
-        button.onClick.AddListener(() => onBuy());
+        buyButton.onClick.RemoveAllListeners();
+        buyButton.onClick.AddListener(() => onBuy?.Invoke());
     }
 }

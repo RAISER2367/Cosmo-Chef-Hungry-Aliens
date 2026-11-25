@@ -8,6 +8,14 @@ public class FirstPersonChefController : MonoBehaviour
     [SerializeField] private float gravity = -15f;
     [SerializeField] private float groundGravity = -2f;
 
+    [Header("Відчуття руху")]
+    [Tooltip("Як швидко шеф розганяється до повної швидкості, м/с²")]
+    [SerializeField] private float acceleration = 45f;
+    [Tooltip("Як швидко зупиняється, коли клавіші відпущено, м/с²")]
+    [SerializeField] private float deceleration = 60f;
+    [Tooltip("Відстань між кроками, м. 0 = без звуку кроків")]
+    [SerializeField] private float stepDistance = 1.7f;
+
     [Header("Огляд (Look)")]
     [SerializeField] private Transform playerCamera;
     [SerializeField] private float mouseSensitivity = 2f;
@@ -16,6 +24,8 @@ public class FirstPersonChefController : MonoBehaviour
     private CharacterController _characterController;
     private float _cameraPitch = 0f;
     private float _verticalVelocity = 0f;
+    private Vector3 _planarVelocity = Vector3.zero;
+    private float _stepAccumulator = 0f;
 
     private void Awake()
     {
@@ -28,7 +38,13 @@ public class FirstPersonChefController : MonoBehaviour
 
     private void Update()
     {
-        if (!GameFlow.CanMove) return; // в ноутбуці й на результаті гравець стоїть
+        if (!GameFlow.CanMove)
+        {
+            // в ноутбуці й на результаті гравець стоїть, інерція не переноситься в наступний кадр руху
+            _planarVelocity = Vector3.zero;
+            return;
+        }
+
         HandleLook();
         HandleMovement();
     }
@@ -50,11 +66,15 @@ public class FirstPersonChefController : MonoBehaviour
 
     private void HandleMovement()
     {
-        // Читаємо стандартні кнопки WASD
-        float moveX = Input.GetAxis("Horizontal");
-        float moveZ = Input.GetAxis("Vertical");
+        // Сирі осі + власний розгін: відгук без «ковзання» вбудованого згладжування
+        float moveX = Input.GetAxisRaw("Horizontal");
+        float moveZ = Input.GetAxisRaw("Vertical");
 
-        Vector3 moveDirection = (transform.right * moveX) + (transform.forward * moveZ);
+        // ClampMagnitude: по діагоналі шеф більше не біжить у 1.41 раза швидше
+        Vector3 wish = Vector3.ClampMagnitude((transform.right * moveX) + (transform.forward * moveZ), 1f) * moveSpeed;
+
+        float rate = wish.sqrMagnitude > 0.01f ? acceleration : deceleration;
+        _planarVelocity = Vector3.MoveTowards(_planarVelocity, wish, rate * Time.deltaTime);
 
         if (_characterController.isGrounded && _verticalVelocity < 0)
         {
@@ -62,9 +82,30 @@ public class FirstPersonChefController : MonoBehaviour
         }
         _verticalVelocity += gravity * Time.deltaTime;
 
-        Vector3 velocity = moveDirection * moveSpeed;
+        Vector3 velocity = _planarVelocity;
         velocity.y = _verticalVelocity;
 
         _characterController.Move(velocity * Time.deltaTime);
+
+        HandleFootsteps();
+    }
+
+    private void HandleFootsteps()
+    {
+        if (stepDistance <= 0f) return;
+
+        float speed = _planarVelocity.magnitude;
+        if (!_characterController.isGrounded || speed < 0.5f)
+        {
+            _stepAccumulator = 0f;
+            return;
+        }
+
+        _stepAccumulator += speed * Time.deltaTime;
+        if (_stepAccumulator >= stepDistance)
+        {
+            _stepAccumulator = 0f;
+            Feedback.Sfx("step", 0.5f, Random.Range(0.85f, 1.1f));
+        }
     }
 }
