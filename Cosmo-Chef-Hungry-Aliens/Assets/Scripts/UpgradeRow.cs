@@ -10,9 +10,6 @@ public class UpgradeRow : MonoBehaviour
     [SerializeField] Button buyButton;
     [SerializeField] TMP_Text buttonText;
 
-    static readonly Color AffordColor = Color.white;
-    static readonly Color TooPoorColor = new Color(1f, 0.45f, 0.4f);
-
     public void Setup(Upgrade u, Action onBuy)
     {
         titleText.text = u.title;
@@ -21,8 +18,6 @@ public class UpgradeRow : MonoBehaviour
         bool owned = GameSession.Owns(u.id);
         bool unlocked = u.Unlocked;
         bool canAfford = GameSession.Credits >= u.price;
-
-        buttonText.color = AffordColor;
 
         if (owned)
         {
@@ -36,11 +31,8 @@ public class UpgradeRow : MonoBehaviour
         }
         else
         {
-            // Кнопка лишається активною навіть без грошей: натискання дає пояснення («Не вистачає N кредитів»),
-            // а червона ціна показує, що зараз не по кишені
             buttonText.text = $"{u.price}";
-            buttonText.color = canAfford ? AffordColor : TooPoorColor;
-            buyButton.interactable = true;
+            buyButton.interactable = canAfford;
         }
 
         buyButton.onClick.RemoveAllListeners();

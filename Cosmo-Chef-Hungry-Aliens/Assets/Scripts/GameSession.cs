@@ -12,7 +12,6 @@ public static class GameSession
     // Фінансова розбивка поточної зміни — читає HubUI.ShowResult
     public static int ShiftRevenue { get; private set; }
     public static int ShiftExpenses { get; private set; }
-    public static int ShiftInterest { get; private set; }
 
     static readonly HashSet<string> owned = new HashSet<string>();
 
@@ -52,10 +51,6 @@ public static class GameSession
         ShiftsPlayed = 0;
         seen.Clear();
 
-        ShiftRevenue = 0;
-        ShiftExpenses = 0;
-        ShiftInterest = 0;
-
         OnBalanceChanged?.Invoke();
     }
 
@@ -64,7 +59,6 @@ public static class GameSession
     {
         ShiftRevenue = 0;
         ShiftExpenses = 0;
-        ShiftInterest = 0;
     }
 
     public static void AddCredits(int amount)
@@ -99,14 +93,9 @@ public static class GameSession
     public static void SpendOrDebt(int cost)
     {
         int fromCredits = Mathf.Min(Credits, cost);
-        int toDebt = cost - fromCredits;
-
         Credits -= fromCredits;
-        Debt += toDebt;
+        Debt += cost - fromCredits;
         ShiftExpenses += cost;
-
-        if (toDebt > 0) Feedback.Warn($"Кредитів не вистачило: борг +{toDebt}");
-
         OnBalanceChanged?.Invoke();
     }
 
@@ -117,13 +106,9 @@ public static class GameSession
 
         int interest = Mathf.CeilToInt(Debt * rate);
         Debt += interest;
-        ShiftInterest += interest;
         Debug.Log($"[Debt] нараховано відсотки: +{interest}, борг тепер {Debt}");
-        Feedback.Toast($"Новий день: відсотки +{interest} до боргу", new Color(1f, 0.75f, 0.4f));
         OnBalanceChanged?.Invoke();
     }
-
-    // ---------- Параметри, які змінюють апгрейди ----------
 
     // Комфорок на плиті: одна базова плюс куплені
     public static int BurnerCount
@@ -138,15 +123,6 @@ public static class GameSession
         }
     }
 
-    // Лазерний ніж: 3 натискання → 2
-    public static int CutPresses => Owns("laser_knife") ? 2 : 3;
-
-    // Індукційний контур: час до Burnt 9с → 12с
-    public static float BurnTime => Owns("induction_coil") ? 12f : 9f;
-
-    // Магнітні фіксатори: множник зносу й тряски в турбулентності
-    public static float TurbulenceResistance => Owns("magnetic_clamps") ? 0.4f : 1f;
-
     public static int FridgeCapacityBonus
     {
         get { int b = 0; if (Owns("fridge_cap1")) b += 10; if (Owns("fridge_cap2")) b += 10; return b; }
@@ -155,9 +131,8 @@ public static class GameSession
     public static float AutoBuyThreshold =>
         Owns("autobuy2") ? 0.5f : Owns("autobuy1") ? 0.125f : 0f;
 
-    // Турбо-дрони скорочують базовий час доставки кожного інгредієнта (−33% і −60%)
     public static float TurboDroneLeadTime(float baseLeadTime) =>
-        Owns("turbo_drone2") ? baseLeadTime * 0.4f : Owns("turbo_drone1") ? baseLeadTime * 0.67f : baseLeadTime;
+        Owns("turbo_drone2") ? 6f : Owns("turbo_drone1") ? 10f : baseLeadTime;
 
     public static float DebtInterestRate => Owns("debt_restructure") ? 0.06f : 0.12f;
 

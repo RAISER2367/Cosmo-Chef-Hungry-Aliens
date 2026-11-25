@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -55,15 +53,8 @@ public class HubUI : MonoBehaviour
     [Header("Посилання")]
     [SerializeField] OrderManager orders;
 
-    [Header("Фідбек")]
-    [SerializeField] float panelFadeTime = 0.15f;
-    [SerializeField] float resultCountTime = 0.9f;
-
     bool _hintUsed = false;
     int _currentMarketTab = 0;
-
-    readonly Dictionary<GameObject, Coroutine> _fades = new Dictionary<GameObject, Coroutine>();
-    Coroutine _resultAnim;
 
     void Awake()
     {
@@ -88,14 +79,8 @@ public class HubUI : MonoBehaviour
             categoryTabButtons[i].onClick.AddListener(() => ShowMarketCategory(idx));
         }
 
-        // Звук кліку на всіх кнопках сцени
-        foreach (Button b in FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            b.onClick.AddListener(PlayClick);
-
         HideAll();
     }
-
-    void PlayClick() => Feedback.Sfx("click", 0.7f);
 
     void Start()
     {
@@ -131,37 +116,11 @@ public class HubUI : MonoBehaviour
         }
     }
 
-    // ---------- М'які переходи панелей ----------
-
-    void Show(GameObject panel)
-    {
-        panel.SetActive(true);
-
-        CanvasGroup cg = panel.GetComponent<CanvasGroup>();
-        if (cg == null) cg = panel.AddComponent<CanvasGroup>();
-
-        Coroutine running;
-        if (_fades.TryGetValue(panel, out running) && running != null) StopCoroutine(running);
-
-        cg.alpha = 0f;
-        _fades[panel] = StartCoroutine(FadeIn(cg));
-    }
-
-    IEnumerator FadeIn(CanvasGroup cg)
-    {
-        for (float t = 0f; t < panelFadeTime; t += Time.unscaledDeltaTime)
-        {
-            cg.alpha = t / panelFadeTime;
-            yield return null;
-        }
-        cg.alpha = 1f;
-    }
-
     public void OpenLaptop()
     {
         _hintUsed = true;
         HideAll();
-        Show(laptopMenu);
+        laptopMenu.SetActive(true);
         GameFlow.Set(GamePhase.Laptop);
         RefreshWallet();
     }
@@ -176,7 +135,7 @@ public class HubUI : MonoBehaviour
     {
         marketPanel.SetActive(false);
         callPanel.SetActive(false);
-        Show(laptopMenu);
+        laptopMenu.SetActive(true);
 
         if (EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(null);
@@ -187,14 +146,14 @@ public class HubUI : MonoBehaviour
     void OpenMarket()
     {
         laptopMenu.SetActive(false);
-        Show(marketPanel);
+        marketPanel.SetActive(true);
         ShowMarketCategory(0);
     }
 
     void OpenCall()
     {
         laptopMenu.SetActive(false);
-        Show(callPanel);
+        callPanel.SetActive(true);
         ShowNode(parents.BeginCall());
         RefreshCall();
     }
@@ -207,72 +166,22 @@ public class HubUI : MonoBehaviour
         orders.StartShift();
     }
 
-    // ---------- Результат зміни ----------
-
     public void ShowResult(int served, int lost, int credits)
     {
         HideAll();
-        Show(resultPanel);
-        GameFlow.Set(GamePhase.Result);
 
-        Feedback.Sfx("end");
-
-        if (_resultAnim != null) StopCoroutine(_resultAnim);
-        _resultAnim = StartCoroutine(AnimateResult(served, lost));
-    }
-
-    // Цифри «накручуються», потім звук залежить від того, чи зміна була прибутковою
-    IEnumerator AnimateResult(int served, int lost)
-    {
-        for (float t = 0f; t < resultCountTime; t += Time.unscaledDeltaTime)
-        {
-            float u = t / resultCountTime;
-            float k = 1f - Mathf.Pow(1f - u, 3f);
-            resultText.text = BuildResult(served, lost, k);
-            yield return null;
-        }
-
-        resultText.text = BuildResult(served, lost, 1f);
-
-        int net = GameSession.ShiftRevenue - GameSession.ShiftExpenses;
-        Feedback.Sfx(net >= 0 ? "coin" : "error");
-        _resultAnim = null;
-    }
-
-    string BuildResult(int served, int lost, float k)
-    {
         int total = served + lost;
         int percent = total > 0 ? Mathf.RoundToInt(100f * served / total) : 0;
 
-        int revenue = GameSession.ShiftRevenue;
-        int expenses = GameSession.ShiftExpenses;
-        int interest = GameSession.ShiftInterest;
-        int net = revenue - expenses;
-
-        int shownServed = Mathf.RoundToInt(served * k);
-        int shownLost = Mathf.RoundToInt(lost * k);
-        int shownRevenue = Mathf.RoundToInt(revenue * k);
-        int shownExpenses = Mathf.RoundToInt(expenses * k);
-        int shownNet = Mathf.RoundToInt(Mathf.Abs(net) * k);
-
-        string netColor = net >= 0 ? "#7CFF8A" : "#FF7A6B";
-        string netSign = net >= 0 ? "+" : "−";
-
-        string text =
+        resultText.text =
             "Зміну завершено\n\n" +
-            $"Обслуговано: {shownServed}\n" +
-            $"Втрачено: {shownLost}\n" +
-            $"Ефективність: {percent}%\n\n" +
-            $"Виручка: {shownRevenue}\n" +
-            $"Витрати на закупівлі: −{shownExpenses}\n";
+            $"Обслуговано: {served}\n" +
+            $"Втрачено: {lost}\n" +
+            $"Ефективність: {percent}%\n" +
+            $"Заробіток: {credits} кредитів";
 
-        if (interest > 0)
-            text += $"Відсотки (додано до боргу): +{interest}\n";
-
-        text += $"<color={netColor}>Чистий результат: {netSign}{shownNet}</color>\n\n" +
-                $"Кредити: {GameSession.Credits}    Борг: {GameSession.Debt}";
-
-        return text;
+        resultPanel.SetActive(true);
+        GameFlow.Set(GamePhase.Result);
     }
 
     void ContinueAfterResult()
@@ -280,7 +189,7 @@ public class HubUI : MonoBehaviour
         HideAll();
 
         ChefInteraction chef = FindFirstObjectByType<ChefInteraction>();
-        if (chef != null) chef.ResetHand();
+        if (chef != null) chef.Hand = null;
 
         GameFlow.Set(GamePhase.Hub);
     }
@@ -292,9 +201,7 @@ public class HubUI : MonoBehaviour
         if (marketWalletText != null) marketWalletText.text = $"Кредити: {GameSession.Credits}";
     }
 
-    // ---------- Маркет ----------
-
-    void ShowMarketCategory(int index, bool keepScroll = false)
+    void ShowMarketCategory(int index)
     {
         _currentMarketTab = index;
 
@@ -308,15 +215,7 @@ public class HubUI : MonoBehaviour
             categoryTabButtons[i].colors = colors;
         }
 
-        ScrollRect scroll = rowsParent != null ? rowsParent.GetComponentInParent<ScrollRect>() : null;
-        float scrollPos = scroll != null ? scroll.verticalNormalizedPosition : 1f;
-
-        // Вимикаємо одразу, а знищуємо в кінці кадру: інакше старі рядки ще мить псують розкладку
-        foreach (Transform child in rowsParent)
-        {
-            child.gameObject.SetActive(false);
-            Destroy(child.gameObject);
-        }
+        foreach (Transform child in rowsParent) Destroy(child.gameObject);
 
         if (rowPrefab == null)
         {
@@ -331,34 +230,17 @@ public class HubUI : MonoBehaviour
             row.Setup(u, () => BuyUpgrade(u));
         }
 
-        if (scroll != null)
-        {
-            Canvas.ForceUpdateCanvases();
-            scroll.verticalNormalizedPosition = keepScroll ? scrollPos : 1f;
-        }
-
         RefreshWallet();
     }
 
     void BuyUpgrade(Upgrade u)
     {
         if (GameSession.TryBuy(u))
-        {
             Debug.Log($"[Market] куплено: {u.title}, залишилось кредитів: {GameSession.Credits}");
-            Feedback.Sfx("buy");
-            Feedback.Good($"Куплено: {u.title}");
-        }
-        else
-        {
-            int missing = u.price - GameSession.Credits;
-            Feedback.Warn(missing > 0 ? $"Не вистачає {missing} кредитів" : "Поки недоступно");
-        }
 
-        // Перемальовуємо поточну вкладку, не скидаючи прокрутку
-        ShowMarketCategory(_currentMarketTab, true);
+        // Перемальовуємо поточну вкладку, щоб не перекидало на першу
+        ShowMarketCategory(_currentMarketTab);
     }
-
-    // ---------- Дзвінок ----------
 
     void RefreshCall()
     {
@@ -373,13 +255,7 @@ public class HubUI : MonoBehaviour
         int paid = GameSession.PayDebt(GameSession.Debt);
         Debug.Log($"[Call] сплачено {paid}, лишилось боргу: {GameSession.Debt}");
 
-        if (paid > 0)
-        {
-            Feedback.Sfx("coin");
-            Feedback.Good($"Сплачено {paid}. Борг: {GameSession.Debt}");
-            ShowNode(parents.AfterPayment(paid));
-        }
-
+        if (paid > 0) ShowNode(parents.AfterPayment(paid));
         RefreshCall();
     }
 
@@ -399,7 +275,6 @@ public class HubUI : MonoBehaviour
         if (choice == null) return;
 
         label.text = choice.label;
-        button.onClick.AddListener(PlayClick);
         button.onClick.AddListener(() =>
         {
             ShowNode(choice.Pick());

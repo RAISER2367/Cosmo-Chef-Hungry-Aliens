@@ -34,13 +34,17 @@ public class FoodVisual : MonoBehaviour
 
     void Awake()
     {
-        InitIfNeeded();
+        if (!_initialized)
+            Apply(null);
     }
 
     void InitIfNeeded()
     {
         if (_initialized) return;
         _initialized = true;
+
+        if (targetRenderer == null)
+            targetRenderer = GetComponent<Renderer>();
 
         _baseScale = transform.localScale;
 
@@ -57,10 +61,10 @@ public class FoodVisual : MonoBehaviour
     {
         InitIfNeeded();
 
-        if (food == null)
+        if (food == null || string.IsNullOrEmpty(food.foodName))
         {
             gameObject.SetActive(false);
-            _lastFoodId = -1; // Скидаємо пам'ять, коли руки чи стіл порожні
+            _lastFoodId = -1;
             return;
         }
 
